@@ -101,3 +101,20 @@ def interactive_login(timeout=600):
             except subprocess.TimeoutExpired:
                 proc.kill()
                 proc.wait()
+
+
+def untrust_device():
+    """Remove this device from the account's trusted devices; returns (ok, message).
+
+    Uses the saved session (no login); a device that is not trusted counts as success.
+    """
+    try:
+        proc = subprocess.run([paths.zju_connect_binary(), "-config", str(paths.CONFIG_TOML),
+                               "-untrust-device"], capture_output=True, text=True, timeout=60)
+    except (OSError, subprocess.TimeoutExpired) as e:
+        return False, str(e)
+    output = proc.stdout + proc.stderr
+    if proc.returncode == 0:
+        return True, "it was not trusted" if "already untrusted" in output else "done"
+    lines = [line for line in output.splitlines() if line.strip()]
+    return False, lines[-1] if lines else f"zju-connect exited with code {proc.returncode}"

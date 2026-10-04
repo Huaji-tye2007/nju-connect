@@ -12,6 +12,7 @@ from .config import DEFAULT_HTTP_PORT, DEFAULT_SERVER, bind_port, load_config, l
 from .daemon import run_daemon
 from .network import on_campus, port_in_use, running_instances, vpn_healthy
 from .util import die
+from .zju import untrust_device
 
 SERVICE_ACTIONS = ("start", "stop", "restart", "status", "logs", "enable", "disable", "run")
 SERVICE_ALIASES = {"install": "enable", "uninstall": "disable"}   # names used before v0.5
@@ -112,6 +113,15 @@ def cmd_upgrade(args):
 
 def cmd_uninstall(args):
     exe = paths.installed_path()
+    if not args.keep_trust and paths.CLIENT_DATA.exists() and paths.CONFIG_TOML.exists():
+        # a trusted device skips SMS codes and counts against the account's device limit
+        print("Removing this device from your trusted devices")
+        ok, message = untrust_device()
+        if ok:
+            print(f"  {message}")
+        else:
+            print(f"  could not untrust it ({message}); remove it from another trusted device or "
+                  "the aTrust portal if needed", file=sys.stderr)
     if paths.UNIT_FILE.exists():
         service.disable()
     for path in {exe, Path(paths.zju_connect_binary())}:
@@ -192,6 +202,8 @@ def build_parser():
 
     p = sub.add_parser("uninstall", help="remove the service and binaries")
     p.add_argument("--purge", action="store_true", help="also delete config and saved session")
+    p.add_argument("--keep-trust", action="store_true",
+                   help="don't remove this device from your trusted devices first")
     p.set_defaults(func=cmd_uninstall)
 
     p = sub.add_parser("daemon")   # hidden alias of `service run` for old unit files

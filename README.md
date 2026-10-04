@@ -57,7 +57,7 @@ nju-connect service run       # 在当前终端运行（没有 systemd 的系统
 | `nju-connect export ...` | 为代理工具导出规则，见下文「与代理工具配合」 |
 | `nju-connect trust` / `untrust` | 把本机设为授信终端 / 取消授信（授信后登录免短信） |
 | `nju-connect upgrade` | 升级到最新版本 |
-| `nju-connect uninstall [--purge]` | 删除服务和程序；`--purge` 同时删除配置和登录状态 |
+| `nju-connect uninstall [--purge]` | 先取消本机的授信（`--keep-trust` 跳过），再删除服务和程序；`--purge` 同时删除配置和登录状态 |
 
 ## 配置
 
