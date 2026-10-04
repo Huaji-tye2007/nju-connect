@@ -14,7 +14,7 @@ os.environ["NJU_CONNECT_STATE_DIR"] = tempfile.mkdtemp()
 
 
 def load(name="njc"):
-    loader = importlib.machinery.SourceFileLoader(name, str(ROOT / "nju-connect"))
+    loader = importlib.machinery.SourceFileLoader(name, str(ROOT / "nju_connect.py"))
     spec = importlib.util.spec_from_loader(name, loader)
     module = importlib.util.module_from_spec(spec)
     loader.exec_module(module)

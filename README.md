@@ -1,4 +1,4 @@
-# NJU Connect
+# NJU Connect CLI
 
 基于 [zju-connect](https://github.com/Mythologyli/zju-connect) 的南京大学 aTrust VPN 命令行工具（Linux）：
 
@@ -11,12 +11,12 @@
 需要 Linux、`curl` 和 Python 3.8+。
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/Huaji-tye2007/nju-connect/main/install.sh | bash
+curl -fsSL https://raw.githubusercontent.com/Huaji-tye2007/nju-connect-cli/main/install.sh | bash
 ```
 
 安装程序会：
 
-1. 从 [Huaji-tye2007/zju-connect](https://github.com/Huaji-tye2007/zju-connect/releases) 下载对应架构的 `zju-connect`（没有预编译文件且装有 Go 时从源码编译），从本仓库 [Releases](https://github.com/Huaji-tye2007/nju-connect/releases) 下载 `nju-connect`
+1. 从 [Huaji-tye2007/zju-connect](https://github.com/Huaji-tye2007/zju-connect/releases) 下载对应架构的 `zju-connect`（没有预编译文件且装有 Go 时从源码编译），从本仓库 [Releases](https://github.com/Huaji-tye2007/nju-connect-cli/releases) 下载 `nju-connect`
 2. 把 `zju-connect` 和 `nju-connect` 安装到 `~/.local/bin`
 3. 运行 `nju-connect setup`，询问学号、密码、登录方式以及是否修改默认代理端口（SOCKS5 1080 / HTTP 1081，直接回车保持默认）
 4. 询问是否启用后台服务
@@ -95,6 +95,13 @@ nju-connect service install   # 启用后台服务
 - **开启 Clash TUN 模式后服务误判为在校内**：TUN 会把内网 DNS 查询也转发进 VPN。请在 TUN 设置中把 10.12.253.4、10.28.253.4 排除，或关闭 TUN 使用系统代理。
 - **不使用 systemd**：在桌面自启动中运行 `nju-connect daemon` 即可。
 - **提示 zju-connect 版本过旧**：生成规则集需要 `--fetch-resource` 选项，目前只有 [Huaji-tye2007/zju-connect](https://github.com/Huaji-tye2007/zju-connect) 的版本支持。运行 `nju-connect upgrade` 安装。
+
+## 开发
+
+- 源代码是单个 Python 文件 [`nju_connect.py`](nju_connect.py)，只依赖标准库（Python 3.8+）；Releases 中的 `nju-connect` 就是它本身（重命名并加上可执行权限）
+- 测试：`python3 -m unittest discover -s tests`
+- 从源码安装：克隆本仓库后运行 `./install.sh`，会使用仓库中的 `nju_connect.py`
+- 发布：修改 `nju_connect.py` 中的 `VERSION`，提交后推送 `v<VERSION>` 标签，GitHub Actions 会运行测试并创建 Release
 
 ## 致谢
 

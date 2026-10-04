@@ -1,18 +1,18 @@
 #!/usr/bin/env bash
 # Install (or upgrade) nju-connect and zju-connect into ~/.local/bin.
 #
-#   curl -fsSL https://raw.githubusercontent.com/Huaji-tye2007/nju-connect/main/install.sh | bash
+#   curl -fsSL https://raw.githubusercontent.com/Huaji-tye2007/nju-connect-cli/main/install.sh | bash
 #
 # Environment:
 #   NJU_CONNECT_VERSION         nju-connect release tag (default: latest release)
 #   ZJU_CONNECT_VERSION         zju-connect release tag (default: latest release)
 #   NJU_CONNECT_PREFIX          install directory (default: ~/.local/bin)
-#   NJU_CONNECT_REPO            nju-connect repository (default: Huaji-tye2007/nju-connect)
+#   NJU_CONNECT_REPO            nju-connect repository (default: Huaji-tye2007/nju-connect-cli)
 #   NJU_CONNECT_ZJU_REPO        zju-connect repository (default: Huaji-tye2007/zju-connect)
 #   NJU_CONNECT_NONINTERACTIVE  set to 1 to skip the setup wizard
 set -euo pipefail
 
-REPO="${NJU_CONNECT_REPO:-Huaji-tye2007/nju-connect}"
+REPO="${NJU_CONNECT_REPO:-Huaji-tye2007/nju-connect-cli}"
 ZJU_REPO="${NJU_CONNECT_ZJU_REPO:-Huaji-tye2007/zju-connect}"
 PREFIX="${NJU_CONNECT_PREFIX:-$HOME/.local/bin}"
 
@@ -87,18 +87,18 @@ else
   die "no prebuilt zju-connect for linux-$arch in $ZJU_VERSION and Go is not installed"
 fi
 
-# nju-connect: this checkout when run from a clone, otherwise the release asset
+# nju-connect: nju_connect.py from this checkout when run from a clone, otherwise the release asset
 script_dir=""
 if [ -f "${BASH_SOURCE[0]:-}" ]; then
   script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 fi
 if [ -z "${NJU_CONNECT_VERSION:-}" ] && [ -n "$script_dir" ] &&
-  [ -f "$script_dir/nju-connect" ] && [ -f "$script_dir/install.sh" ]; then
-  cp "$script_dir/nju-connect" "$tmp/bin/nju-connect"
+  [ -f "$script_dir/nju_connect.py" ] && [ -f "$script_dir/install.sh" ]; then
+  cp "$script_dir/nju_connect.py" "$tmp/bin/nju-connect"
 elif ! curl -fsSL --retry 3 -o "$tmp/bin/nju-connect" \
   "https://github.com/$REPO/releases/download/$NJU_VERSION/nju-connect"; then
   curl -fsSL --retry 3 -o "$tmp/bin/nju-connect" \
-    "https://raw.githubusercontent.com/$REPO/$NJU_VERSION/nju-connect" ||
+    "https://raw.githubusercontent.com/$REPO/$NJU_VERSION/nju_connect.py" ||
     die "cannot download nju-connect $NJU_VERSION"
 fi
 

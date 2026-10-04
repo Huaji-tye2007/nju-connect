@@ -26,8 +26,8 @@ from collections import defaultdict
 from datetime import datetime
 from pathlib import Path
 
-VERSION = "0.2.0"
-INSTALL_URL = "https://raw.githubusercontent.com/Huaji-tye2007/nju-connect/main/install.sh"
+VERSION = "0.2.1"
+INSTALL_URL = "https://raw.githubusercontent.com/Huaji-tye2007/nju-connect-cli/main/install.sh"
 
 HOME = Path.home()
 CONFIG_DIR = Path(os.environ.get("NJU_CONNECT_CONFIG_DIR")
