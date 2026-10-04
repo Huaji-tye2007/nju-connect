@@ -43,9 +43,10 @@ latest_tag() {
   local url
   url="$(curl -fsSLI -o /dev/null -w '%{url_effective}' "https://github.com/$1/releases/latest")" ||
     die "cannot reach GitHub to look up the latest release of $1"
-  url="${url##*/}"
-  [ -n "$url" ] && [ "$url" != latest ] || die "no release found in $1"
-  printf '%s\n' "$url"
+  case "$url" in
+    */releases/tag/?*) printf '%s\n' "${url##*/}" ;;
+    *) die "no release found in $1" ;;
+  esac
 }
 
 NJU_VERSION="${NJU_CONNECT_VERSION:-$(latest_tag "$REPO")}"
@@ -81,7 +82,10 @@ else
 fi
 
 # nju-connect: this checkout when run from a clone, otherwise the release asset
-script_dir="$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")" 2>/dev/null && pwd || true)"
+script_dir=""
+if [ -f "${BASH_SOURCE[0]:-}" ]; then
+  script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+fi
 if [ -z "${NJU_CONNECT_VERSION:-}" ] && [ -n "$script_dir" ] &&
   [ -f "$script_dir/nju-connect" ] && [ -f "$script_dir/install.sh" ]; then
   cp "$script_dir/nju-connect" "$tmp/bin/nju-connect"
