@@ -56,7 +56,11 @@ PAC 只把南大资源交给 `127.0.0.1:1081`，其余直连；zju-connect 停�
 nju-connect export clash-verge --install
 ```
 
-这会写入 Clash Verge Rev 的全局扩展脚本 `profiles/Script.js`（原脚本会自动备份），并把规则集写到 Clash Verge 目录下的 `ruleset/nju-vpn.yaml`。在 Clash Verge 中重新加载订阅后，“规则”页面中应能看到 `nju-vpn`。之后规则会自动更新。
+这会写入 Clash Verge Rev 的全局扩展脚本 `profiles/Script.js`（原脚本会自动备份），并把规则集写到 Clash Verge 目录下的 `ruleset/nju-vpn.yaml`。
+
+Clash Verge Rev 只在重新生成配置时（启动时，或在界面中修改设置后）运行全局扩展脚本，不会因为脚本文件变化而自动生效。因此脚本有变化且 Clash Verge 正在运行时，命令会询问是否重启 Clash Verge（会以原来的命令行和桌面环境重新启动，代理内核在服务模式下继续运行）。不重启的话，也可以在 Clash Verge 中打开全局扩展脚本、随便修改一下再保存。生效后，“规则”页面中应能看到 `nju-vpn`。
+
+之后学校策略变化时，后台服务只会更新规则集文件；规则集设置了 `interval: 600`，mihomo 每 10 分钟会自动重新读取，不需要重启 Clash Verge。
 
 ### FlClash（脚本格式与 Clash Verge Rev 相同，FlClash 中未实测）
 
@@ -104,7 +108,7 @@ rules:
   # …你原来的规则
 ```
 
-规则集更新后，mihomo 需要重新加载配置（或在面板中更新该规则集）才会生效。
+规则集设置了 `interval: 600`，mihomo 每 10 分钟会重新读取文件，规则集更新后会自动生效。
 
 ## 三、sing-box 内核的客户端（sing-box 1.11+）
 

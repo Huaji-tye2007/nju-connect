@@ -2,6 +2,7 @@
 
 import json
 import shutil
+import sys
 from datetime import datetime
 from pathlib import Path
 
@@ -9,7 +10,7 @@ from . import VERSION, clash
 from .config import DEFAULT_HTTP_PORT, DEFAULT_SERVER, MARKER, bind_port, load_config, load_settings, \
     save_settings, socks_address
 from .policy import all_ports, load_policy, nodes, routed
-from .util import die, write_atomic
+from .util import ask_yes, die, write_atomic
 
 
 def _header(entries, skipped, config):
@@ -321,8 +322,26 @@ def export(name, output=None, refresh=False, install=False, inline=False):
     remember(name, output, inline)
     print(f"{'Wrote' if changed else 'Unchanged:'} {Path(output).expanduser()} "
           f"({len(entries)} entries); it will be kept up to date")
-    if name == "clash-verge":
-        print("Reload your profile in Clash Verge to apply it")
+    if install and changed:
+        apply_verge_script()
+
+
+def apply_verge_script():
+    """Clash Verge Rev only runs the global script when it rebuilds its configuration,
+    which it does on start or when you change something in its GUI, not when the file
+    changes. Offer to restart it."""
+    if not clash.verge_processes():
+        print("Clash Verge Rev will load the script the next time it starts")
+        return
+    hint = "restart Clash Verge Rev (or open the global script in its GUI and save it) to apply it"
+    if not sys.stdin.isatty():
+        print(f"To load the new script, {hint}")
+    elif ask_yes("Clash Verge Rev loads the script only when it rebuilds its configuration. "
+                 "Restart Clash Verge Rev now?", default=True):
+        clash.restart_verge()
+        print("Restarted Clash Verge Rev; the NJU rules are active once it has started")
+    else:
+        print(f"Not restarted; {hint}")
 
 
 def refresh_exports(entries=None, skipped=None, quiet=False):

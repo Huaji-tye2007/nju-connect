@@ -1,6 +1,10 @@
 """Clash / mihomo formats: rule-provider, config snippet and Clash Verge Rev script."""
 
 import json
+import os
+import signal
+import subprocess
+import time
 from pathlib import Path
 
 from . import VERSION, paths
@@ -8,6 +12,7 @@ from .config import DEFAULT_SERVER, MARKER, socks_address
 from .policy import all_ports, nodes, routed
 
 RULE_ORDER = {"DOMAIN": 0, "DOMAIN-WILDCARD": 1, "IP-CIDR": 2}
+PROVIDER_INTERVAL = 600   # seconds between mihomo re-reading the ruleset file
 
 
 DEFAULT_RESOLVE = ("nju.edu.cn",)
@@ -72,7 +77,10 @@ def provider_for(entries, clash_path, resolve=DEFAULT_RESOLVE):
                 relative = path.relative_to(home.resolve())
             except ValueError:
                 continue
-            return {"type": "file", "behavior": "classical", "format": "yaml", "path": f"./{relative}"}
+            # interval: mihomo re-reads the file this often, so ruleset updates apply without
+            # Clash Verge having to rebuild its configuration
+            return {"type": "file", "behavior": "classical", "format": "yaml", "path": f"./{relative}",
+                    "interval": PROVIDER_INTERVAL}
     # mihomo only reads provider files inside its home directory
     return {"type": "inline", "behavior": "classical", "payload": clash_rules(entries, resolve)}
 
@@ -138,3 +146,70 @@ def verge_script_path():
 
 def verge_ruleset_path():
     return paths.VERGE_DIR / "ruleset/nju-vpn.yaml"
+
+
+# ------------------------------------------------- restarting Clash Verge Rev
+
+def verge_processes(only_exe=None):
+    """Running Clash Verge Rev GUI processes of this user as (pid, exe, argv, environ).
+
+    only_exe limits the search to one executable (used by the tests, so they never touch
+    a real Clash Verge).
+    """
+    found = []
+    for entry in Path("/proc").iterdir():
+        if not entry.name.isdigit():
+            continue
+        try:
+            if entry.stat().st_uid != os.getuid():
+                continue
+            exe = os.readlink(entry / "exe").replace(" (deleted)", "")
+            if Path(exe).name != "clash-verge" or (only_exe and exe != str(only_exe)):
+                continue
+            if not _alive(int(entry.name)):
+                continue
+            argv = [a.decode() for a in (entry / "cmdline").read_bytes().split(b"\0") if a]
+            environ = dict(item.decode(errors="replace").split("=", 1)
+                           for item in (entry / "environ").read_bytes().split(b"\0") if b"=" in item)
+        except OSError:
+            continue
+        found.append((int(entry.name), exe, argv, environ))
+    return found
+
+
+def _alive(pid):
+    """Running and not an exited process waiting to be reaped."""
+    try:
+        return (Path("/proc") / str(pid) / "stat").read_text().rsplit(")", 1)[1].split()[0] != "Z"
+    except OSError:
+        return False
+
+
+def restart_verge(timeout=15, only_exe=None):
+    """Restart the Clash Verge Rev GUI so it rebuilds its configuration (and runs the script).
+
+    Each process is started again with its own command line and environment (DISPLAY,
+    WAYLAND_DISPLAY, DBUS_SESSION_BUS_ADDRESS, ...), so this also works from a plain terminal.
+    The mihomo core (service mode) keeps running; Clash Verge reapplies the configuration
+    when it starts. Returns False if Clash Verge was not running.
+    """
+    processes = verge_processes(only_exe)
+    if not processes:
+        return False
+    for pid, *_ in processes:
+        try:
+            os.kill(pid, signal.SIGTERM)
+        except ProcessLookupError:
+            pass
+    deadline = time.monotonic() + timeout
+    while time.monotonic() < deadline and any(_alive(pid) for pid, *_ in processes):
+        time.sleep(0.2)
+    started = set()
+    for pid, exe, argv, environ in processes:
+        key = (exe, tuple(argv[1:]))
+        if key in started:
+            continue
+        started.add(key)
+        subprocess.Popen([exe] + argv[1:], env=environ, cwd=str(Path.home()), stdin=subprocess.DEVNULL,
+                         stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, start_new_session=True)
+    return True
