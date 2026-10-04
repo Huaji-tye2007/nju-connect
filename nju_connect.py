@@ -13,7 +13,6 @@ import ipaddress
 import json
 import os
 import re
-import shlex
 import shutil
 import signal
 import socket
@@ -26,7 +25,7 @@ from collections import defaultdict
 from datetime import datetime
 from pathlib import Path
 
-VERSION = "0.2.1"
+VERSION = "0.2.2"
 INSTALL_URL = "https://raw.githubusercontent.com/Huaji-tye2007/nju-connect-cli/main/install.sh"
 
 HOME = Path.home()
@@ -610,19 +609,6 @@ def clash_yaml(config, settings, inline=False):
 
 # ---------------------------------------------------------------- commands
 
-def parse_run_sh(path):
-    """Read zju-connect flags from an old run.sh-style launcher."""
-    flags = {}
-    for line in Path(path).read_text().splitlines():
-        if "zju-connect" not in line or line.lstrip().startswith("#"):
-            continue
-        args = shlex.split(line)
-        for i, arg in enumerate(args):
-            if arg.startswith("-") and i + 1 < len(args) and not args[i + 1].startswith("-"):
-                flags[arg.lstrip("-")] = args[i + 1]
-    return flags
-
-
 def auth_domains(server, port):
     try:
         proc = subprocess.run([zju_connect_binary(), "-protocol", "atrust", "-server", server,
@@ -652,14 +638,6 @@ def choose_port(name, default, current):
 
 
 def cmd_setup(args):
-    imported = {}
-    if args.migrate:
-        old = Path(args.migrate).expanduser()
-        run_sh = old / "run.sh"
-        if run_sh.exists():
-            imported = parse_run_sh(run_sh)
-            print(f"Imported settings from {run_sh}")
-
     existing = read_toml(CONFIG_TOML) if CONFIG_TOML.exists() else {}
     write_config = True
     if existing and not ask_yes(f"{CONFIG_TOML} exists. Reconfigure username/password/ports?"):
@@ -667,17 +645,17 @@ def cmd_setup(args):
 
     config = dict(existing)
     if write_config:
-        server = args.server or imported.get("server") or existing.get("server_address") or DEFAULT_SERVER
-        port = int(imported.get("port") or existing.get("server_port") or 443)
-        username = ask("NJU username (学号)", imported.get("username") or existing.get("username", ""))
+        server = args.server or existing.get("server_address") or DEFAULT_SERVER
+        port = int(existing.get("server_port") or 443)
+        username = ask("NJU username (学号)", existing.get("username", ""))
         while not username:
             username = ask("NJU username (学号)")
-        known = imported.get("password") or existing.get("password", "")
+        known = existing.get("password", "")
         password = getpass.getpass("Password (统一身份认证密码)" + (" [Enter keeps the saved one]" if known else "") + ": ") or known
         while not password:
             password = getpass.getpass("Password: ")
 
-        domain = imported.get("login-domain") or existing.get("login_domain")
+        domain = existing.get("login_domain")
         if not domain:
             choices = auth_domains(server, port)
             names = [c.get("loginDomain") for c in choices if c.get("loginDomain")]
@@ -689,8 +667,8 @@ def cmd_setup(args):
             else:
                 domain = names[0] if names else DEFAULT_DOMAIN
 
-        socks = bind_port(imported.get("socks-bind") or existing.get("socks_bind", ""), DEFAULT_SOCKS_PORT)
-        http = bind_port(imported.get("http-bind") or existing.get("http_bind", ""), DEFAULT_HTTP_PORT)
+        socks = bind_port(existing.get("socks_bind", ""), DEFAULT_SOCKS_PORT)
+        http = bind_port(existing.get("http_bind", ""), DEFAULT_HTTP_PORT)
         if ask_yes(f"Change the default proxy ports (SOCKS5 {socks}, HTTP {http})?"):
             socks = choose_port("SOCKS5", DEFAULT_SOCKS_PORT, socks)
             http = choose_port("HTTP", DEFAULT_HTTP_PORT, http)
@@ -701,15 +679,15 @@ def cmd_setup(args):
             "server_port": port,
             "username": username,
             "password": password,
-            "auth_type": imported.get("auth-type") or existing.get("auth_type", "auth/psw"),
+            "auth_type": existing.get("auth_type", "auth/psw"),
             "login_domain": domain,
             "disable_zju_config": True,
             "socks_bind": f"127.0.0.1:{socks}",
             "http_bind": f"127.0.0.1:{http}",
             "client_data_file": str(CLIENT_DATA),
         }
-        for flag, key in (("phone", "phone"), ("totp-secret", "totp_secret")):
-            value = imported.get(flag) or existing.get(key)
+        for key in ("phone", "totp_secret"):
+            value = existing.get(key)
             if value:
                 config[key] = value
 
@@ -729,13 +707,6 @@ def cmd_setup(args):
 
     STATE_DIR.mkdir(parents=True, exist_ok=True)
     os.chmod(STATE_DIR, 0o700)
-    if args.migrate:
-        old = Path(args.migrate).expanduser()
-        client_data = old / imported.get("client-data-file", "client_data.json")
-        for src, dst in ((client_data, CLIENT_DATA), (old / "resource.json", RESOURCE)):
-            if src.exists() and (not dst.exists() or ask_yes(f"Replace {dst} with {src}?")):
-                write_atomic(dst, src.read_bytes(), 0o600)
-                print(f"Copied {src} -> {dst}")
 
     settings = load_settings()
     if not settings["ruleset"]["output"]:
@@ -1058,7 +1029,6 @@ def main():
     sub = parser.add_subparsers(dest="command", required=True)
 
     p = sub.add_parser("setup", help="create or edit the configuration")
-    p.add_argument("--migrate", metavar="DIR", help="import run.sh, client_data.json and resource.json from DIR")
     p.add_argument("--server", help=f"aTrust server (default {DEFAULT_SERVER})")
     p.set_defaults(func=cmd_setup)
 

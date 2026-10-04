@@ -108,18 +108,6 @@ class ConfigTest(unittest.TestCase):
             else:
                 sys.modules["tomllib"] = saved
 
-    def test_parse_run_sh(self):
-        with tempfile.NamedTemporaryFile("w", suffix=".sh", delete=False) as f:
-            f.write("#!/bin/sh\n./zju-connect -protocol atrust -server vpn.nju.edu.cn "
-                    "-username 1 -password 'a b' -disable-zju-config -login-domain x\n")
-        try:
-            flags = njc.parse_run_sh(f.name)
-        finally:
-            os.unlink(f.name)
-        self.assertEqual(flags["password"], "a b")
-        self.assertEqual(flags["login-domain"], "x")
-        self.assertNotIn("disable-zju-config", flags)
-
     def test_socks_address(self):
         self.assertEqual(njc.socks_address({"socks_bind": ":1080"}), ("127.0.0.1", 1080))
         self.assertEqual(njc.socks_address({"socks_bind": "127.0.0.1:2080"}), ("127.0.0.1", 2080))
