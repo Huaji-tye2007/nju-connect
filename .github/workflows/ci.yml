@@ -16,15 +16,20 @@ jobs:
         with:
           python-version: ${{ matrix.python }}
       - name: Compile
-        run: python -m py_compile nju_connect.py
+        run: python -m compileall -q nju_connect
       - name: Unit tests
-        run: python -m unittest discover -s tests -v
+        run: python -m unittest discover -s tests -t . -v
+      - name: Build and smoke-test the executable
+        run: |
+          bash tools/build.sh
+          python dist/nju-connect --version
+          python dist/nju-connect config --help
 
   shell:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - name: Check install.sh
+      - name: Check shell scripts
         run: |
-          bash -n install.sh
-          shellcheck install.sh
+          bash -n install.sh tools/build.sh
+          shellcheck install.sh tools/build.sh

@@ -38,7 +38,8 @@ nju-connect service install   # 启用后台服务
 
 | 命令 | 作用 |
 |---|---|
-| `nju-connect setup` | 创建或修改配置（账号、密码、登录方式、代理端口） |
+| `nju-connect setup [--advanced]` | 创建或修改配置（账号、密码、登录方式、代理端口）；`--advanced` 还会询问后台服务、Clash 和校园网检测的设置 |
+| `nju-connect config show\|get\|set` | 查看或修改单项设置，见下文「配置」 |
 | `nju-connect connect` | 前台连接，用于首次登录或输入短信验证码 |
 | `nju-connect trust` / `untrust` | 把本机设为授信终端 / 取消授信（授信后登录免短信） |
 | `nju-connect ruleset` | 下载访问策略并生成规则集；`--from-file` 使用上次下载的策略 |
@@ -49,6 +50,35 @@ nju-connect service install   # 启用后台服务
 | `nju-connect uninstall [--purge]` | 删除服务和程序；`--purge` 同时删除配置和登录状态 |
 
 如果已有 zju-connect 在运行，或代理端口被占用，`connect` 和 `service install` 会显示进程号并提示先停止它（`--force` 可跳过检查）。
+
+## 配置
+
+设置保存在两个文件中（zju-connect 只接受它认识的配置项，所以 nju-connect 自己的设置单独存放），可以统一用 `nju-connect config` 查看和修改：
+
+```bash
+nju-connect config show                          # 列出全部设置及所在文件（密码显示为 ********）
+nju-connect config get daemon.check_interval
+nju-connect config set daemon.check_interval 30
+nju-connect config set clash.health_url http://lib.nju.edu.cn/
+nju-connect config set account.password          # 不写值时会提示输入（密码不回显）
+```
+
+修改后会自动生效：涉及 Clash 的设置会重新生成已安装的 Clash Verge 脚本，涉及连接或后台服务的设置会重启正在运行的服务。非法的值会被拒绝，文件保持不变。
+
+| 设置 | 含义 | 默认值 |
+|---|---|---|
+| `account.username` / `account.password` / `account.login_domain` | 学号、密码、登录域 | `setup` 时填写 |
+| `server.address` / `server.port` | aTrust 服务器 | `vpn.nju.edu.cn` / `443` |
+| `proxy.socks_port` / `proxy.http_port` | 本机代理端口（仅监听 127.0.0.1） | `1080` / `1081` |
+| `daemon.check_interval` | 后台服务检查网络的间隔（秒，≥10） | `60` |
+| `daemon.ruleset_interval` | 更新规则集的间隔（秒，≥300） | `1800` |
+| `clash.proxy_name` / `clash.group_name` | Clash 代理和策略组名称 | `NJUConnect` / `NJU` |
+| `clash.group_type` | 策略组类型：`fallback`、`url-test`、`select` | `fallback` |
+| `clash.health_url` / `clash.health_interval` | 策略组健康检查地址（需能通过 VPN 访问）和间隔（秒，≥30） | `http://lib.nju.edu.cn/` / `300` |
+| `clash.script`、`ruleset.output`、`ruleset.provider_path` | 脚本和规则集路径 | 根据检测到的 Clash 自动设置 |
+| `campus.dns_servers` / `campus.probe_name` | 用于判断是否在校园网的内网 DNS 和查询域名 | `10.12.253.4, 10.28.253.4` / `www.nju.edu.cn` |
+
+不需要填写手机号：南大使用密码登录，需要短信验证时 zju-connect 会从服务器获取手机号。
 
 ## 后台服务如何工作
 
@@ -98,10 +128,26 @@ nju-connect service install   # 启用后台服务
 
 ## 开发
 
-- 源代码是单个 Python 文件 [`nju_connect.py`](nju_connect.py)，只依赖标准库（Python 3.8+）；Releases 中的 `nju-connect` 就是它本身（重命名并加上可执行权限）
-- 测试：`python3 -m unittest discover -s tests`
-- 从源码安装：克隆本仓库后运行 `./install.sh`，会使用仓库中的 `nju_connect.py`
-- 发布：修改 `nju_connect.py` 中的 `VERSION`，提交后推送 `v<VERSION>` 标签，GitHub Actions 会运行测试并创建 Release
+源代码位于 [`nju_connect/`](nju_connect) 包中，只依赖标准库（Python 3.8+）：
+
+| 模块 | 内容 |
+|---|---|
+| `cli.py` | 命令行参数和各子命令入口 |
+| `configure.py` | `setup` 向导和 `config show/get/set` |
+| `config.py` | 两个配置文件的读写和设置项定义（类型、校验、修改后的影响） |
+| `paths.py` | 文件位置，查找 zju-connect |
+| `network.py` | 校园网检测、VPN 健康检查、运行中实例检测 |
+| `zju.py` | 调用 zju-connect（下载访问策略、获取登录方式） |
+| `ruleset.py` | 把访问策略转换为 mihomo 规则集 |
+| `clash.py` | 生成 Clash Verge 全局脚本 / mihomo 配置片段 |
+| `daemon.py` | 后台服务的主循环 |
+| `service.py` | systemd 用户服务 |
+
+- 测试：`python3 -m unittest discover -s tests -t .`
+- 直接运行源码：`python3 -m nju_connect --help`
+- 打包：`tools/build.sh` 用标准库 `zipapp` 把整个包打成单个可执行文件 `dist/nju-connect`，Releases 中发布的就是它
+- 从源码安装：克隆本仓库后运行 `./install.sh`，会先打包再安装
+- 发布：修改 `nju_connect/__init__.py` 中的 `VERSION`，提交后推送 `v<VERSION>` 标签，GitHub Actions 会运行测试、打包并创建 Release
 
 ## 致谢
 

@@ -1,5 +1,3 @@
-import importlib.machinery
-import importlib.util
 import json
 import os
 import sys
@@ -7,21 +5,8 @@ import tempfile
 import unittest
 from pathlib import Path
 
-ROOT = Path(__file__).resolve().parent.parent
-# never read or write the real ~/.config/nju-connect while testing
-os.environ["NJU_CONNECT_CONFIG_DIR"] = tempfile.mkdtemp()
-os.environ["NJU_CONNECT_STATE_DIR"] = tempfile.mkdtemp()
-
-
-def load(name="njc"):
-    loader = importlib.machinery.SourceFileLoader(name, str(ROOT / "nju_connect.py"))
-    spec = importlib.util.spec_from_loader(name, loader)
-    module = importlib.util.module_from_spec(spec)
-    loader.exec_module(module)
-    return module
-
-
-njc = load()
+from nju_connect import clash, config
+from nju_connect.ruleset import build_rules
 
 
 def resource(apps):
@@ -42,7 +27,7 @@ def addr(host, port="80", protocol="all", ip=None):
 
 class BuildRulesTest(unittest.TestCase):
     def rules(self, *apps):
-        rules, skipped = njc.build_rules(resource(list(apps)))
+        rules, skipped = build_rules(resource(list(apps)))
         return set(rules), dict(skipped)
 
     def test_domain_ports_are_merged(self):
@@ -79,7 +64,7 @@ class BuildRulesTest(unittest.TestCase):
 
     def test_error_code_is_rejected(self):
         with self.assertRaises(ValueError):
-            njc.build_rules(json.dumps({"code": 1, "message": "denied"}))
+            build_rules(json.dumps({"code": 1, "message": "denied"}))
 
 
 class ConfigTest(unittest.TestCase):
@@ -98,7 +83,7 @@ class ConfigTest(unittest.TestCase):
         try:
             with tempfile.NamedTemporaryFile("w", suffix=".toml", delete=False) as f:
                 f.write(self.TOML)
-            self.assertEqual(njc.read_toml(f.name), {
+            self.assertEqual(config.read_toml(f.name), {
                 "username": "251220100", "password": 'p"w', "server_port": 443,
                 "disable_zju_config": True, "socks_bind": "127.0.0.1:2080"})
         finally:
@@ -109,14 +94,14 @@ class ConfigTest(unittest.TestCase):
                 sys.modules["tomllib"] = saved
 
     def test_socks_address(self):
-        self.assertEqual(njc.socks_address({"socks_bind": ":1080"}), ("127.0.0.1", 1080))
-        self.assertEqual(njc.socks_address({"socks_bind": "127.0.0.1:2080"}), ("127.0.0.1", 2080))
+        self.assertEqual(config.socks_address({"socks_bind": ":1080"}), ("127.0.0.1", 1080))
+        self.assertEqual(config.socks_address({"socks_bind": "127.0.0.1:2080"}), ("127.0.0.1", 2080))
 
 
 class ClashScriptTest(unittest.TestCase):
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory()
-        self.settings = njc.load_settings()
+        self.settings = config.load_settings()
         self.ruleset = Path(self.tmp.name) / "nju-vpn.yaml"
         self.ruleset.write_text("payload:\n  - 'IP-CIDR,10.0.0.0/12,no-resolve'\n")
         self.settings["ruleset"]["output"] = str(self.ruleset)
@@ -127,17 +112,17 @@ class ClashScriptTest(unittest.TestCase):
 
     def test_file_provider_follows_config(self):
         self.settings["ruleset"]["provider_path"] = "./ruleset/nju-vpn.yaml"
-        proxy, group, provider, rules = njc.clash_parts(self.config, self.settings)
+        proxy, group, provider, rules = clash.clash_parts(self.config, self.settings)
         self.assertEqual((proxy["server"], proxy["port"], proxy["udp"]), ("127.0.0.1", 2080, True))
         self.assertEqual(group["type"], "fallback")
         self.assertEqual(group["proxies"], ["NJUConnect", "DIRECT"])
         self.assertEqual(provider["path"], "./ruleset/nju-vpn.yaml")
         self.assertEqual(rules, ["DOMAIN,vpn.nju.edu.cn,DIRECT", "RULE-SET,nju-vpn,NJU"])
-        self.assertIn('"port": 2080', njc.clash_js(self.config, self.settings))
+        self.assertIn('"port": 2080', clash.clash_js(self.config, self.settings))
 
     def test_absolute_provider_path_is_inlined(self):
         self.settings["ruleset"]["provider_path"] = str(self.ruleset)
-        _, _, provider, _ = njc.clash_parts(self.config, self.settings)
+        _, _, provider, _ = clash.clash_parts(self.config, self.settings)
         self.assertEqual(provider, {"type": "inline", "behavior": "classical",
                                     "payload": ["IP-CIDR,10.0.0.0/12,no-resolve"]})
 

@@ -17,18 +17,17 @@ jobs:
           python-version: "3.12"
       - name: Check the tag matches VERSION
         run: |
-          version="$(sed -n 's/^VERSION = "\(.*\)"$/\1/p' nju_connect.py)"
+          version="$(sed -n 's/^VERSION = "\(.*\)"$/\1/p' nju_connect/__init__.py)"
           if [ "v$version" != "$GITHUB_REF_NAME" ]; then
-            echo "::error::tag $GITHUB_REF_NAME does not match VERSION $version in nju_connect.py"
+            echo "::error::tag $GITHUB_REF_NAME does not match VERSION $version in nju_connect/__init__.py"
             exit 1
           fi
       - name: Unit tests
-        run: python -m unittest discover -s tests -v
+        run: python -m unittest discover -s tests -t . -v
       - name: Publish release
         env:
           GH_TOKEN: ${{ github.token }}
-        # the source is nju_connect.py; users get it as the executable `nju-connect`
+        # the nju_connect package is shipped as one executable zipapp, `nju-connect`
         run: |
-          mkdir dist
-          install -m 755 nju_connect.py dist/nju-connect
+          bash tools/build.sh
           gh release create "$GITHUB_REF_NAME" --generate-notes dist/nju-connect install.sh config.toml.example

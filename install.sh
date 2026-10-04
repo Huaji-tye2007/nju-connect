@@ -87,19 +87,20 @@ else
   die "no prebuilt zju-connect for linux-$arch in $ZJU_VERSION and Go is not installed"
 fi
 
-# nju-connect: nju_connect.py from this checkout when run from a clone, otherwise the release asset
+# nju-connect: built from this checkout when run from a clone, otherwise the release asset
+# (or, if a release has no asset, built from that tag's source)
 script_dir=""
 if [ -f "${BASH_SOURCE[0]:-}" ]; then
   script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 fi
-if [ -z "${NJU_CONNECT_VERSION:-}" ] && [ -n "$script_dir" ] &&
-  [ -f "$script_dir/nju_connect.py" ] && [ -f "$script_dir/install.sh" ]; then
-  cp "$script_dir/nju_connect.py" "$tmp/bin/nju-connect"
+if [ -z "${NJU_CONNECT_VERSION:-}" ] && [ -n "$script_dir" ] && [ -f "$script_dir/tools/build.sh" ]; then
+  bash "$script_dir/tools/build.sh" "$tmp/bin/nju-connect" >/dev/null
 elif ! curl -fsSL --retry 3 -o "$tmp/bin/nju-connect" \
   "https://github.com/$REPO/releases/download/$NJU_VERSION/nju-connect"; then
-  curl -fsSL --retry 3 -o "$tmp/bin/nju-connect" \
-    "https://raw.githubusercontent.com/$REPO/$NJU_VERSION/nju_connect.py" ||
-    die "cannot download nju-connect $NJU_VERSION"
+  mkdir -p "$tmp/nju-src"
+  curl -fsSL --retry 3 "https://github.com/$REPO/archive/refs/tags/$NJU_VERSION.tar.gz" |
+    tar -xz -C "$tmp/nju-src" || die "cannot download nju-connect $NJU_VERSION"
+  bash "$tmp"/nju-src/*/tools/build.sh "$tmp/bin/nju-connect" >/dev/null
 fi
 
 mkdir -p "$PREFIX"
