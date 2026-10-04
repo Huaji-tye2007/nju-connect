@@ -1,0 +1,22 @@
+# zju-connect configuration for NJU, normally written by `nju-connect setup`
+# to ~/.config/nju-connect/config.toml (mode 600, it contains your password).
+# zju-connect reads it directly and rejects unknown keys.
+
+protocol = "atrust"
+server_address = "vpn.nju.edu.cn"
+server_port = 443
+
+username = "学号"
+password = "统一身份认证密码"
+auth_type = "auth/psw"
+login_domain = "openldap13924"
+
+# Local proxies (localhost only); Clash connects to the SOCKS5 port
+socks_bind = "127.0.0.1:1080"
+http_bind = "127.0.0.1:1081"
+
+# Don't add the ZJU-specific routes built into zju-connect
+disable_zju_config = true
+
+# Saved login session, so later logins skip the SMS code
+client_data_file = "/home/<you>/.local/state/nju-connect/client_data.json"
