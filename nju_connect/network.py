@@ -83,6 +83,9 @@ def running_instances(exclude_pid=None):
         try:
             if (entry / "comm").read_text().strip() != "zju-connect":
                 continue
+            # field 3 of /proc/PID/stat is the state; Z = exited, waiting to be reaped
+            if (entry / "stat").read_text().rsplit(")", 1)[1].split()[0] == "Z":
+                continue
             uid = entry.stat().st_uid
         except OSError:
             continue

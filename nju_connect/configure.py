@@ -2,15 +2,18 @@
 
 import getpass
 import os
+import shutil
+from pathlib import Path
 
 from . import paths, service
-from .clash import refresh_installed_script
+from .clash import install_clash_script, refresh_installed_script
 from .config import (CLASH, DEFAULT_DOMAIN, DEFAULT_HTTP_PORT, DEFAULT_SERVER, DEFAULT_SOCKS_PORT,
                      OPTIONS, RESTART, bind_port, load_config, load_settings, option, read_toml,
                      save_settings, set_options, write_config)
-from .network import port_in_use
+from .network import port_in_use, require_no_instance
+from .ruleset import update_ruleset
 from .util import ask, ask_yes, die
-from .zju import auth_domains
+from .zju import auth_domains, interactive_login
 
 
 def apply_effects(effects):
@@ -112,7 +115,34 @@ def ask_advanced():
     return set_options(changes)
 
 
+def login():
+    """Log in interactively (SMS code if asked) and save the session.
+
+    The service is paused meanwhile, since only one zju-connect can run.
+    """
+    config = load_config()
+    resume = service.uses_default_config() and service.is_active()
+    if resume:
+        print(f"Pausing {paths.UNIT_NAME} while you log in")
+        service.systemctl("stop", paths.UNIT_NAME)
+    try:
+        require_no_instance(config, force=False)
+        print(f"Logging in to {config.get('server_address', DEFAULT_SERVER)} as {config.get('username')}; "
+              "enter the SMS code when zju-connect asks for it.\n", flush=True)
+        ok = interactive_login()
+    finally:
+        if resume:
+            service.systemctl("start", paths.UNIT_NAME)
+            print(f"Resumed {paths.UNIT_NAME}")
+    if ok:
+        print(f"\nLogged in; the session is saved in {paths.CLIENT_DATA}")
+    else:
+        print("\nLogin did not complete; run `nju-connect login` to try again")
+    return ok
+
+
 def setup(server=None, advanced=False):
+    """First-run (or re-run) wizard: config, first login, ruleset, Clash script, service."""
     existing = read_toml(paths.CONFIG_TOML) if paths.CONFIG_TOML.exists() else {}
     effects = set()
     if not existing or ask_yes(f"{paths.CONFIG_TOML} exists. Reconfigure username/password/ports?"):
@@ -131,19 +161,59 @@ def setup(server=None, advanced=False):
         settings["clash"]["script"] = script
     save_settings(settings)
     print(f"Wrote {paths.SETTINGS_FILE}")
-
     if advanced:
         effects |= ask_advanced()
-    apply_effects(effects)
 
-    print("\nNext steps:")
-    if not paths.CLIENT_DATA.exists():
-        print("  nju-connect connect          # first login (may ask for an SMS code); Ctrl+C when connected")
-    print("  nju-connect ruleset          # generate the Clash ruleset")
-    print("  nju-connect clash-script --install   # Clash Verge Rev global script (or --format yaml)")
-    print("  nju-connect service install  # run automatically whenever you are off campus")
+    todo = []
+    logged_in = paths.CLIENT_DATA.exists()
+    if not logged_in:
+        print("\nFirst login: zju-connect connects once so you can enter the SMS code; "
+              "the saved session lets later logins (and the background service) skip it.")
+        if ask_yes("Log in now?", default=True):
+            logged_in = login()
+        if not logged_in:
+            todo.append("nju-connect login               # log in once (SMS code)")
+
+    if logged_in:
+        print("\nGenerating the Clash ruleset")
+        try:
+            update_ruleset()
+        except Exception as e:
+            print(f"  failed: {e}")
+            todo.append("nju-connect ruleset             # generate the Clash ruleset")
+
+    config, settings = load_config(), load_settings()
+    script = settings["clash"]["script"]
+    if script and not Path(settings["ruleset"]["output"]).exists():
+        todo.append("nju-connect clash-script --install   # after generating the ruleset")
+    elif script:
+        if refresh_installed_script(config, settings):
+            effects.discard(CLASH)
+        elif ask_yes(f"Install the Clash Verge Rev global script ({script})?", default=True):
+            install_clash_script(config, settings)
+            effects.discard(CLASH)
+        else:
+            todo.append("nju-connect clash-script --install   # Clash Verge Rev global script")
+    elif not script:
+        todo.append("nju-connect clash-script --format yaml   # mihomo config snippet to merge")
+
+    if paths.UNIT_FILE.exists():
+        apply_effects(effects)
+    elif logged_in and shutil.which("systemctl"):
+        if ask_yes("Connect automatically whenever you are off campus (systemd user service)?",
+                   default=True):
+            service.install()
+        else:
+            todo.append("nju-connect service install     # connect automatically off campus")
+    elif not logged_in:
+        todo.append("nju-connect service install     # after logging in")
+
+    print("\nSetup finished." if not todo else "\nSetup finished. Still to do:")
+    for line in todo:
+        print(f"  {line}")
+    print("\nUseful commands: `nju-connect check`, `nju-connect config show`, `nju-connect service logs`")
     if not advanced:
-        print("  nju-connect setup --advanced # daemon, Clash and campus-detection settings")
+        print("Daemon, Clash and campus-detection settings: `nju-connect setup --advanced`")
 
 
 def display(opt, value):

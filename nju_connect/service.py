@@ -60,6 +60,8 @@ def restart_if_active():
 
 def install(force=False):
     exe = paths.installed_path()
+    if not paths.CLIENT_DATA.exists():
+        die("log in once first with `nju-connect login` (the service cannot enter SMS codes)")
     require_no_instance(load_config(), force, ignore_service=True)
     write_atomic(paths.UNIT_FILE, UNIT_TEMPLATE.format(exe=exe), 0o644)
     systemctl("daemon-reload")

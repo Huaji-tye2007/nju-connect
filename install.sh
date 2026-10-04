@@ -132,14 +132,6 @@ config="${NJU_CONNECT_CONFIG_DIR:-${XDG_CONFIG_HOME:-$HOME/.config}/nju-connect}
 if [ -f "$config" ]; then
   msg "Keeping your existing configuration ($config); run \`nju-connect setup\` to change it."
 else
+  # setup walks through the account, first login (SMS code), ruleset, Clash script and service
   "$PREFIX/nju-connect" setup </dev/tty
 fi
-if [ -f "$unit" ]; then
-  exit 0
-fi
-printf 'Start NJU Connect automatically whenever you are off campus (systemd user service)? [y/N] '
-read -r answer </dev/tty || answer=
-case "$answer" in
-  y | Y | yes) "$PREFIX/nju-connect" service install </dev/tty || true ;;
-  *) msg "You can enable it later with \`nju-connect service install\`." ;;
-esac

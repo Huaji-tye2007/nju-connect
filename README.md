@@ -18,21 +18,21 @@ curl -fsSL https://raw.githubusercontent.com/Huaji-tye2007/nju-connect-cli/main/
 
 1. 从 [Huaji-tye2007/zju-connect](https://github.com/Huaji-tye2007/zju-connect/releases) 下载对应架构的 `zju-connect`（没有预编译文件且装有 Go 时从源码编译），从本仓库 [Releases](https://github.com/Huaji-tye2007/nju-connect-cli/releases) 下载 `nju-connect`
 2. 把 `zju-connect` 和 `nju-connect` 安装到 `~/.local/bin`
-3. 运行 `nju-connect setup`，询问学号、密码、登录方式以及是否修改默认代理端口（SOCKS5 1080 / HTTP 1081，直接回车保持默认）
-4. 询问是否启用后台服务
+3. 运行 `nju-connect setup` 完成首次配置（见下文）
 
 运行 `nju-connect upgrade`（或重新运行安装命令）即可升级，已有配置不会被覆盖，后台服务会自动重启。可用 `NJU_CONNECT_VERSION=<tag>` / `ZJU_CONNECT_VERSION=<tag>` 安装指定版本，`NJU_CONNECT_PREFIX=<目录>` 修改安装位置。
 
 ## 首次使用
 
-```bash
-nju-connect connect           # 首次登录（可能需要输入短信验证码），连接成功后 Ctrl+C 退出
-nju-connect ruleset           # 生成 Clash 规则集
-nju-connect clash-script --install   # 安装 Clash Verge Rev 全局扩展脚本
-nju-connect service install   # 启用后台服务
-```
+安装程序会自动运行 `nju-connect setup`（也可以随时手动运行），依次完成：
 
-登录状态保存在 `client_data.json` 中，之后的登录（包括后台服务）会复用它，不需要再输入验证码。
+1. 询问学号、密码、登录方式，以及是否修改默认代理端口（SOCKS5 1080 / HTTP 1081，直接回车保持默认）
+2. **首次登录**：在当前终端运行 zju-connect，需要时输入短信验证码；登录成功、保存登录状态后自动退出
+3. 下载访问策略，生成 Clash 规则集
+4. 检测到 Clash Verge Rev 时询问是否安装全局扩展脚本
+5. 询问是否启用后台服务（校外自动连接）
+
+最后只列出被跳过、仍需手动完成的步骤。登录状态保存在 `client_data.json` 中，之后的连接（包括后台服务）都会复用它，不需要再输入验证码；登录状态过期时运行 `nju-connect login` 重新登录即可。
 
 ## 命令
 
@@ -40,7 +40,9 @@ nju-connect service install   # 启用后台服务
 |---|---|
 | `nju-connect setup [--advanced]` | 创建或修改配置（账号、密码、登录方式、代理端口）；`--advanced` 还会询问后台服务、Clash 和校园网检测的设置 |
 | `nju-connect config show\|get\|set` | 查看或修改单项设置，见下文「配置」 |
-| `nju-connect connect` | 前台连接，用于首次登录或输入短信验证码 |
+| `nju-connect login` | 在终端中登录（需要时输入短信验证码）并保存登录状态；后台服务运行时会自动暂停再恢复 |
+| `nju-connect connect` | 在后台连接，连上后立即返回（已启用后台服务时改为启动服务）；`-f` 在前台运行并显示 zju-connect 输出 |
+| `nju-connect disconnect` | 断开后台连接（或停止后台服务） |
 | `nju-connect trust` / `untrust` | 把本机设为授信终端 / 取消授信（授信后登录免短信） |
 | `nju-connect ruleset` | 下载访问策略并生成规则集；`--from-file` 使用上次下载的策略 |
 | `nju-connect clash-script` | 输出 Clash Verge Rev 全局扩展脚本；`--install` 直接写入（自动备份旧脚本），`--format yaml` 输出 mihomo 配置片段，`--inline` 把规则直接写进脚本 |
@@ -49,7 +51,7 @@ nju-connect service install   # 启用后台服务
 | `nju-connect upgrade` | 升级到最新版本 |
 | `nju-connect uninstall [--purge]` | 删除服务和程序；`--purge` 同时删除配置和登录状态 |
 
-如果已有 zju-connect 在运行，或代理端口被占用，`connect` 和 `service install` 会显示进程号并提示先停止它（`--force` 可跳过检查）。
+如果已有 zju-connect 在运行，或代理端口被占用，`connect`、`login` 和 `service install` 会显示进程号并提示先停止它（`--force` 可跳过检查）。后台连接的日志在 `~/.local/state/nju-connect/zju-connect.log`。
 
 ## 配置
 
@@ -87,7 +89,8 @@ nju-connect config set account.password          # 不写值时会提示输入�
 - **是否在校园网**：直接向南大内网 DNS（10.12.253.4、10.28.253.4）查询。只有在校园网内才会得到应答。
 - **校外**：启动 zju-connect；通过 SOCKS5 代理向内网 DNS 查询来检查 VPN 是否可用，连续 3 次失败则重启；VPN 可用时每 30 分钟更新规则集。
 - **校内**：停止 zju-connect。
-- **登录失败**（例如登录状态过期且需要短信验证码）：逐渐延长重试间隔（最长 30 分钟），并弹出桌面通知。此时运行 `nju-connect service stop && nju-connect connect` 完成登录，再 `nju-connect service start`。
+- **需要登录**：还没有登录状态，或登录状态过期、服务器要求短信验证码时，服务不会反复重试（每次重试都会发送一条短信），而是弹出桌面通知并等待。运行 `nju-connect login` 完成登录后，服务会自动重新连接。
+- **其他连接失败**：逐渐延长重试间隔（最长 30 分钟）。
 - 如果端口上已有其他 zju-connect 在运行，服务不会再启动一个，只负责更新规则集。
 
 查看日志：`nju-connect service logs`。

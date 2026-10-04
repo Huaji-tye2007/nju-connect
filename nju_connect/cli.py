@@ -8,11 +8,11 @@ import sys
 import time
 from pathlib import Path
 
-from . import INSTALL_URL, VERSION, __doc__ as PACKAGE_DOC, configure, paths, service
+from . import INSTALL_URL, VERSION, __doc__ as PACKAGE_DOC, configure, connection, paths, service
 from .clash import clash_js, clash_yaml, install_clash_script
 from .config import DEFAULT_SERVER, load_config, load_settings, socks_address
 from .daemon import run_daemon
-from .network import on_campus, port_in_use, require_no_instance, running_instances, vpn_healthy
+from .network import on_campus, port_in_use, running_instances, vpn_healthy
 from .ruleset import count_rules, ruleset_path, update_ruleset
 from .util import die, write_atomic
 
@@ -30,11 +30,16 @@ def cmd_config(args):
         configure.set_value(args.key, args.value)
 
 
+def cmd_login(args):
+    sys.exit(0 if configure.login() else 1)
+
+
 def cmd_connect(args):
-    config = load_config()
-    require_no_instance(config, args.force)
-    zju = paths.zju_connect_binary()
-    os.execv(zju, [zju, "-config", str(paths.CONFIG_TOML)] + args.extra)
+    connection.connect(args.foreground, args.force, args.extra)
+
+
+def cmd_disconnect(args):
+    connection.disconnect()
 
 
 def cmd_trust(args):
@@ -148,10 +153,19 @@ def build_parser():
     q.add_argument("value", nargs="?", help="new value; omit to be prompted (passwords are hidden)")
     p.set_defaults(func=cmd_config)
 
-    p = sub.add_parser("connect", help="connect in the foreground (first login, SMS codes)")
-    p.add_argument("--force", action="store_true", help="skip the running-instance check")
+    p = sub.add_parser("login", help="log in interactively (SMS code) and save the session")
+    p.set_defaults(func=cmd_login)
+
+    p = sub.add_parser("connect", help="connect in the background (starts the service if installed)")
+    p.add_argument("-f", "--foreground", action="store_true",
+                   help="run zju-connect in this terminal instead, showing its output")
+    p.add_argument("--force", action="store_true",
+                   help="skip the running-instance check and don't hand over to the service")
     p.add_argument("extra", nargs=argparse.REMAINDER, help="extra zju-connect flags")
     p.set_defaults(func=cmd_connect)
+
+    p = sub.add_parser("disconnect", help="stop the background connection (or the service)")
+    p.set_defaults(func=cmd_disconnect)
 
     for name, text in (("trust", "trust this device (later logins skip SMS)"),
                        ("untrust", "remove this device from the trusted list")):

@@ -4,6 +4,7 @@ import os
 import signal
 import subprocess
 import sys
+import threading
 import time
 
 from . import paths
@@ -11,7 +12,7 @@ from .config import load_config, load_settings, socks_address
 from .network import instance_problems, on_campus, port_in_use, vpn_healthy
 from .ruleset import update_ruleset
 from .util import log, notify
-from .zju import require_fetch_resource
+from .zju import NEEDS_INPUT, require_fetch_resource, session_mtime
 
 
 class Supervisor:
@@ -34,14 +35,52 @@ class Supervisor:
         self.health_failures = 0
         self.next_update = 0.0
         self.campus = None
+        self.needs_input = False
+        self.login_mark = None      # session mtime when a manual login became necessary
+        self.waiting_for_login = False
 
     def start(self):
         log("Off campus: starting zju-connect")
+        self.needs_input = False
         self.proc = subprocess.Popen([paths.zju_connect_binary(), "-config", str(paths.CONFIG_TOML)],
-                                     stdin=subprocess.DEVNULL, start_new_session=True)
+                                     stdin=subprocess.DEVNULL, stdout=subprocess.PIPE,
+                                     stderr=subprocess.STDOUT, start_new_session=True)
+        threading.Thread(target=self.pump, args=(self.proc,), daemon=True).start()
         self.started_at = time.monotonic()
         self.health_failures = 0
         self.next_update = self.started_at + self.STARTUP_GRACE
+
+    def pump(self, proc):
+        """Forward zju-connect's output to the journal and spot SMS prompts."""
+        for raw in proc.stdout:
+            line = raw.decode(errors="replace")
+            sys.stdout.write(line)
+            sys.stdout.flush()
+            if NEEDS_INPUT.search(line):
+                self.needs_input = True
+
+    def require_login(self, why):
+        """Stop retrying (each try may send an SMS) until the user logs in again."""
+        self.login_mark = session_mtime()
+        notify(f"{why} Run `nju-connect login` in a terminal; the service resumes by itself afterwards.")
+
+    def login_pending(self):
+        if self.login_mark is None and session_mtime() is not None:
+            if self.waiting_for_login:
+                log("Session found; connecting")
+                self.waiting_for_login = False
+            return False
+        if session_mtime() is None:
+            if not self.waiting_for_login:
+                self.waiting_for_login = True
+                log("No saved session yet; waiting for `nju-connect login`")
+            return True
+        if session_mtime() != self.login_mark:
+            log("New session found; connecting again")
+            self.login_mark, self.waiting_for_login = None, False
+            self.failures, self.retry_at = 0, 0.0
+            return False
+        return True
 
     def stop(self, why):
         if not self.proc:
@@ -63,6 +102,9 @@ class Supervisor:
         ran = now - self.started_at
         log(f"zju-connect exited with code {self.proc.returncode} after {ran:.0f}s")
         self.proc = None
+        if self.needs_input:
+            self.require_login("The VPN session expired and the login needs an SMS code.")
+            return
         if ran >= self.QUICK_EXIT:
             self.failures = 0
             return
@@ -72,9 +114,7 @@ class Supervisor:
         log(f"Retrying in {delay}s")
         if self.failures >= 2 and not self.notified:
             self.notified = True
-            notify("zju-connect cannot log in on its own (session expired or SMS code needed). "
-                   "Run `nju-connect service stop && nju-connect connect` once, "
-                   "then `nju-connect service start`.")
+            notify("zju-connect keeps failing to connect; see `nju-connect service logs`.")
 
     def update_ruleset(self, now):
         if now < self.next_update:
@@ -118,6 +158,8 @@ class Supervisor:
                     self.update_ruleset(now)
                 return
             self.warned_external = False
+            if self.login_pending():
+                return
             if now >= self.retry_at:
                 self.start()
             return

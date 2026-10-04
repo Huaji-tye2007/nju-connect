@@ -1,12 +1,18 @@
 """Running zju-connect for one-shot tasks: feature check, resource download, login methods."""
 
 import json
+import re
+import signal
 import subprocess
 import tempfile
+import time
 from pathlib import Path
 
 from . import paths
 from .util import write_atomic
+
+# zju-connect output meaning the login is waiting for input (an SMS code)
+NEEDS_INPUT = re.compile(r"Please enter|challenge: EOF|verification code", re.I)
 
 _fetch_resource_checked = False
 
@@ -55,3 +61,45 @@ def auth_domains(server, port):
     except Exception:
         return []
     return [i for i in infos if i.get("authType") == "auth/psw"]
+
+
+def _mtime(path):
+    try:
+        return path.stat().st_mtime
+    except OSError:
+        return None
+
+
+def session_mtime():
+    return _mtime(paths.CLIENT_DATA)
+
+
+def interactive_login(timeout=600):
+    """Run zju-connect in this terminal until it saves a session, then stop it.
+
+    zju-connect prompts for SMS codes itself; client_data.json is written once
+    the login has fully succeeded. Returns True on success.
+    """
+    before = session_mtime()
+    proc = subprocess.Popen([paths.zju_connect_binary(), "-config", str(paths.CONFIG_TOML)])
+    deadline = time.monotonic() + timeout
+    try:
+        while proc.poll() is None:
+            saved = session_mtime()
+            if saved is not None and saved != before:
+                return True
+            if time.monotonic() > deadline:
+                return False
+            time.sleep(0.5)
+        saved = session_mtime()
+        return saved is not None and saved != before
+    except KeyboardInterrupt:
+        return False
+    finally:
+        if proc.poll() is None:
+            proc.send_signal(signal.SIGTERM)
+            try:
+                proc.wait(timeout=10)
+            except subprocess.TimeoutExpired:
+                proc.kill()
+                proc.wait()
