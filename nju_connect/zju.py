@@ -118,3 +118,26 @@ def untrust_device():
         return True, "it was not trusted" if "already untrusted" in output else "done"
     lines = [line for line in output.splitlines() if line.strip()]
     return False, lines[-1] if lines else f"zju-connect exited with code {proc.returncode}"
+
+
+SESSION_INVALID = re.compile(r"not logged in|session is invalid|reauthentication required", re.I)
+
+
+def check_session():
+    """State of the saved login session: "valid", "expired", "missing" or "unknown".
+
+    Asks the server with the saved cookies only (never logs in, so no SMS is sent);
+    "unknown" means the server could not be reached. A valid check also refreshes
+    the cached access policy.
+    """
+    if not paths.CLIENT_DATA.exists():
+        return "missing"
+    try:
+        data = download_resource()
+    except RuntimeError as e:
+        return "expired" if SESSION_INVALID.search(str(e)) else "unknown"
+    except subprocess.TimeoutExpired:
+        return "unknown"
+    from .util import write_atomic
+    write_atomic(paths.RESOURCE, data, 0o600)
+    return "valid"

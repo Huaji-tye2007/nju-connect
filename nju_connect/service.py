@@ -3,11 +3,13 @@
 import os
 import shutil
 import subprocess
+import sys
 
 from . import paths
 from .config import load_config
 from .network import require_no_instance
 from .util import die, write_atomic
+from .zju import check_session
 
 UNIT_TEMPLATE = """[Unit]
 Description=NJU Connect: zju-connect (off campus in auto mode), plus access-policy updates
@@ -79,16 +81,32 @@ def _write_unit():
 
 
 def _require_session():
-    if not paths.CLIENT_DATA.exists():
-        die("log in once first with `nju-connect login` (the service cannot enter SMS codes)")
+    """Make sure the service can connect without an SMS code; log in first if needed.
+
+    The service cannot type SMS codes, so starting it with an expired session (on a device
+    that is not trusted) would only make it wait for `nju-connect login`.
+    """
+    state = check_session()
+    if state == "valid":
+        return
+    if state == "unknown":
+        print("Could not check the saved session (is the network up?); starting anyway")
+        return
+    reason = "No saved session" if state == "missing" else "The saved session has expired"
+    if not sys.stdin.isatty():
+        die(f"{reason}; run `nju-connect login` first (the service cannot enter SMS codes)")
+    print(f"{reason}; logging in first (enter the SMS code if asked)")
+    from .configure import login   # configure imports this module
+    if not login():
+        die("the service was not started because the login did not complete")
 
 
 def start(force=False):
     _require_default_config()
-    _require_session()
     if is_active():
         print(f"{paths.UNIT_NAME} is already running")
         return
+    _require_session()
     require_no_instance(load_config(), force)
     _write_unit()
     systemctl("start", paths.UNIT_NAME)

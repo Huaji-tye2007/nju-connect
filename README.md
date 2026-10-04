@@ -44,7 +44,7 @@ nju-connect service disable   # 取消自动启动（并停止）
 nju-connect service run       # 在当前终端运行（没有 systemd 的系统可把它加入自启动）
 ```
 
-终端只在 `nju-connect login` 时使用（输入短信验证码）；后台服务运行时，`login` 会自动暂停服务，登录完成后再恢复。
+终端只在 `nju-connect login` 时使用（输入短信验证码）；后台服务运行时，`login` 会自动暂停服务，登录完成后再恢复。`service start` / `enable` / `restart` 会先检查保存的登录状态（只用已保存的 Cookie 询问服务器，不会触发短信）；如果已经过期，会先在当前终端完成登录再启动服务，避免服务启动后因需要短信验证码而无法连接。
 
 ## 命令
 
