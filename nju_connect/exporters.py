@@ -8,14 +8,14 @@ from pathlib import Path
 from . import VERSION, clash
 from .config import DEFAULT_HTTP_PORT, DEFAULT_SERVER, MARKER, bind_port, load_config, load_settings, \
     save_settings, socks_address
-from .policy import all_ports, load_policy
+from .policy import all_ports, load_policy, nodes, routed
 from .util import die, write_atomic
 
 
 def _header(entries, skipped, config):
     lines = [f"{MARKER} {VERSION} from the NJU aTrust access policy",
              f"Updated: {datetime.now().astimezone().isoformat(timespec='seconds')}",
-             f"Server: {config.get('server_address', DEFAULT_SERVER)}  Entries: {len(entries)}"]
+             f"Server: {config.get('server_address', DEFAULT_SERVER)}  Entries: {len(routed(entries))}"]
     return lines + [f"Skipped {n}: {why}" for why, n in sorted(skipped.items())]
 
 
@@ -30,7 +30,7 @@ def _regex(domain):
 # ------------------------------------------------------------------ formats
 
 def render_clash(entries, skipped, config, settings, exports):
-    return clash.rule_provider(entries, _header(entries, skipped, config))
+    return clash.rule_provider(entries, _header(entries, skipped, config), clash.resolve_domains(settings))
 
 
 def render_clash_config(entries, skipped, config, settings, exports):
@@ -41,11 +41,11 @@ def render_clash_verge(entries, skipped, config, settings, exports):
     return clash.clash_verge_script(entries, config, settings, exports.get("clash"))
 
 
-def render_sing_box(entries, skipped, config, settings, exports):
-    """sing-box rule-set source (version 1): domain and IP rules kept apart, since
-    sing-box ANDs the domain and IP categories inside one rule."""
+def _sing_box_rules(entries):
+    """Headless rules; domain and IP rules kept apart, since sing-box ANDs the domain
+    and IP categories inside one rule."""
     groups = {}
-    for e in entries:
+    for e in routed(entries):
         category = "ip" if e.kind == "cidr" else "domain"
         key = (category, e.ports, e.network)
         rule = groups.setdefault(key, {})
@@ -64,7 +64,42 @@ def render_sing_box(entries, skipped, config, settings, exports):
                 rule["port_range"] = ranges
         if e.network:
             rule["network"] = e.network
-    return json.dumps({"version": 1, "rules": list(groups.values())}, ensure_ascii=False, indent=2) + "\n"
+    return list(groups.values())
+
+
+def render_sing_box(entries, skipped, config, settings, exports):
+    """sing-box rule-set source (version 1)."""
+    return json.dumps({"version": 1, "rules": _sing_box_rules(entries)}, ensure_ascii=False, indent=2) + "\n"
+
+
+def render_sing_box_config(entries, skipped, config, settings, exports):
+    """sing-box outbound + route rules around the nju-vpn rule-set.
+
+    The rule-set is matched once by domain, then the destination is resolved (only for
+    the configured domains) and matched again, so NJU hosts that are only covered by an
+    IP range are routed like zju-connect routes them. Needs sing-box 1.11+.
+    """
+    tag = settings["export"]["proxy_name"]
+    host, port = socks_address(config)
+    if "sing-box" in exports:
+        rule_set = {"type": "local", "tag": "nju-vpn", "format": "source", "path": exports["sing-box"]}
+    else:
+        rule_set = {"type": "inline", "tag": "nju-vpn", "rules": _sing_box_rules(entries)}
+    server = config.get("server_address", DEFAULT_SERVER)
+    rules = [{"domain": [server], "outbound": "direct"}]
+    node_ips = [n.value for n in nodes(entries)]
+    if node_ips:
+        rules.append({"ip_cidr": node_ips, "outbound": "direct"})
+    rules.append({"rule_set": "nju-vpn", "outbound": tag})
+    resolve = clash.resolve_domains(settings)
+    if resolve:
+        rules.append({"action": "resolve"} if "*" in resolve else
+                     {"domain_suffix": list(resolve), "action": "resolve"})
+        rules.append({"rule_set": "nju-vpn", "outbound": tag})
+    return json.dumps({
+        "outbounds": [{"type": "socks", "tag": tag, "server": host, "server_port": port, "version": "5"}],
+        "route": {"rule_set": [rule_set], "rules": rules},
+    }, ensure_ascii=False, indent=2) + "\n"
 
 
 def render_xray(entries, skipped, config, settings, exports):
@@ -73,7 +108,7 @@ def render_xray(entries, skipped, config, settings, exports):
     tag = settings["export"]["proxy_name"]
     host, port = socks_address(config)
     groups = {}
-    for e in entries:
+    for e in routed(entries):
         field = "ip" if e.kind == "cidr" else "domain"
         key = (field, e.ports, e.network)
         rule = groups.get(key)
@@ -86,12 +121,22 @@ def render_xray(entries, skipped, config, settings, exports):
         rule[field].append(e.value if e.kind == "cidr" else
                            f"full:{e.value}" if e.kind == "domain" else f"regexp:{_regex(e.value)}")
     server = config.get("server_address", DEFAULT_SERVER)
+    # zju-connect's own connections to the server and VPN nodes must stay direct
     rules = [{"type": "field", "domain": [f"full:{server}"], "outboundTag": "direct"}]
+    node_ips = [n.value for n in nodes(entries)]
+    if node_ips:
+        rules.append({"type": "field", "ip": node_ips, "outboundTag": "direct"})
     rules += list(groups.values())
+    routing = {"rules": rules}
+    if clash.resolve_domains(settings):
+        # resolve a domain as soon as an IP rule is checked, so the IP ranges apply to NJU
+        # hosts too; IPIfNonMatch would not help once a later domain rule (e.g. geosite:cn)
+        # matches. Xray cannot limit the resolving to some domains.
+        routing["domainStrategy"] = "IPOnDemand"
     return json.dumps({
         "outbounds": [{"tag": tag, "protocol": "socks",
                        "settings": {"servers": [{"address": host, "port": port}]}}],
-        "routing": {"rules": rules},
+        "routing": routing,
     }, ensure_ascii=False, indent=2) + "\n"
 
 
@@ -101,6 +146,7 @@ var PROXY = "PROXY {proxy}; DIRECT";
 var EXACT = {exact};
 var SUBDOMAINS = {subdomains};
 var NETS = {nets};
+var RESOLVE = {resolve};   // domains resolved to check NETS ([] = only IP literals, ["*"] = all)
 
 function portOf(url) {{
   var m = url.match(/^[a-z]+:\\/\\/(?:[^@\\/]*@)?(?:\\[[^\\]]*\\]|[^:\\/]+)(?::(\\d+))?/i);
@@ -124,9 +170,16 @@ function FindProxyForURL(url, host) {{
     var parent = host.substring(dot + 1);
     if (SUBDOMAINS.hasOwnProperty(parent) && inRanges(port, SUBDOMAINS[parent])) return PROXY;
   }}
-  if (/^\\d+\\.\\d+\\.\\d+\\.\\d+$/.test(host)) {{
+  var ip = /^\\d+\\.\\d+\\.\\d+\\.\\d+$/.test(host) ? host : null;
+  for (var r = 0; ip === null && r < RESOLVE.length; r++) {{
+    if (RESOLVE[r] === "*" || host === RESOLVE[r] || dnsDomainIs(host, "." + RESOLVE[r])) {{
+      ip = dnsResolve(host);
+      break;
+    }}
+  }}
+  if (ip) {{
     for (var i = 0; i < NETS.length; i++) {{
-      if (isInNet(host, NETS[i][0], NETS[i][1]) && inRanges(port, NETS[i][2])) return PROXY;
+      if (isInNet(ip, NETS[i][0], NETS[i][1]) && inRanges(port, NETS[i][2])) return PROXY;
     }}
   }}
   return "DIRECT";
@@ -138,7 +191,7 @@ def render_pac(entries, skipped, config, settings, exports):
     """PAC file (TCP only: browsers speak HTTP/HTTPS through the HTTP proxy)."""
     import ipaddress
     exact, subdomains, nets = {}, {}, {}
-    for e in entries:
+    for e in routed(entries):
         if e.network == "udp":
             continue
         ports = None if all_ports(e) else [list(r) for r in e.ports]
@@ -158,16 +211,19 @@ def render_pac(entries, skipped, config, settings, exports):
         header=" | ".join(_header(entries, skipped, config)[:3]),
         proxy=f"127.0.0.1:{http_port}",
         exact=json.dumps(exact, sort_keys=True), subdomains=json.dumps(subdomains, sort_keys=True),
-        nets=json.dumps(net_list))
+        nets=json.dumps(net_list),
+        resolve=json.dumps(list(clash.resolve_domains(settings))))
 
 
 def render_list(entries, skipped, config, settings, exports):
     lines = [f"# {line}" for line in _header(entries, skipped, config)]
     lines.append("# destination\tports\tnetwork")
-    for e in entries:
+    for e in routed(entries):
         host = f"*.{e.value}" if e.kind == "subdomains" else e.value
         ports = "all" if all_ports(e) else _port_text(e, ",", "-")
         lines.append(f"{host}\t{ports}\t{e.network or 'tcp+udp'}")
+    for n in nodes(entries):
+        lines.append(f"# VPN node (keep direct): {n.value}\t{_port_text(n, ',', '-')}")
     return "\n".join(lines) + "\n"
 
 
@@ -176,6 +232,7 @@ FORMATS = {
     "clash-config": (render_clash_config, "mihomo config snippet: proxy, group, rule-provider, rules"),
     "clash-verge": (render_clash_verge, "Clash Verge Rev global script (use --install)"),
     "sing-box": (render_sing_box, "sing-box rule-set source (JSON)"),
+    "sing-box-config": (render_sing_box_config, "sing-box outbound and route rules to merge (JSON, 1.11+)"),
     "xray": (render_xray, "Xray/V2Ray outbound and routing rules (JSON)"),
     "pac": (render_pac, "PAC file for browsers / system proxy settings"),
     "list": (render_list, "plain list of destinations, ports and protocols"),
@@ -261,7 +318,7 @@ def refresh_exports(entries=None, skipped=None, quiet=False):
         entries, skipped = load_policy()
     changed = 0
     # the clash rule-provider first: the clash-verge/clash-config exports point at it
-    for name in sorted(exports, key=lambda n: n != "clash"):
+    for name in sorted(exports, key=lambda n: n not in ("clash", "sing-box")):
         if name not in FORMATS:
             continue
         if write_file(exports[name], render(name, entries, skipped)):

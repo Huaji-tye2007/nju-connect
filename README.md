@@ -84,6 +84,7 @@ nju-connect config set account.password       # 不写值时会提示输入（�
 | `export.proxy_name` / `export.group_name` | 导出的 Clash/Xray 配置中的代理和策略组名称 | `NJUConnect` / `NJU` |
 | `export.group_type` | Clash 策略组类型：`fallback`、`url-test`、`select` | `fallback` |
 | `export.health_url` / `export.health_interval` | Clash 策略组健康检查地址（需能通过 VPN 访问）和间隔（秒，≥30） | `http://lib.nju.edu.cn/` / `300` |
+| `export.resolve_domains` | 为匹配学校 IP 段而解析的域名（逗号分隔；`*` 表示全部解析，留空表示从不解析），见下文 | `nju.edu.cn` |
 
 不需要填写手机号：南大使用密码登录，需要短信验证时 zju-connect 会从服务器获取手机号。
 
@@ -98,8 +99,9 @@ nju-connect config set account.password       # 不写值时会提示输入（�
 | `clash-verge` | Clash Verge Rev 全局扩展脚本（注入代理、`fallback` 策略组和规则） | `nju-connect export clash-verge --install`，然后在 Clash Verge 中重新加载订阅 |
 | `clash` | mihomo 规则集（rule-provider，classical） | `nju-connect export clash -o ~/.config/mihomo/ruleset/nju-vpn.yaml` |
 | `clash-config` | mihomo 配置片段：代理、策略组、规则集和规则，适合 FlClash、Mihomo Party 等其他 mihomo 客户端 | `nju-connect export clash-config`，把输出合并进配置 |
-| `sing-box` | sing-box 规则集源文件（JSON），适合 sing-box、Hiddify、GUI.for.SingBox | `nju-connect export sing-box -o ~/nju-vpn.json`，在 `route.rule_set` 中以 `local` 类型引用，出站指向 `socks 127.0.0.1:1080` |
-| `xray` | Xray/V2Ray 出站和路由规则（JSON），适合 v2rayA、Xray | `nju-connect export xray`，把 `outbounds` 和 `routing.rules` 合并进配置 |
+| `sing-box` | sing-box 规则集源文件（JSON），适合 sing-box、Hiddify、GUI.for.SingBox | `nju-connect export sing-box -o ~/nju-vpn.json` |
+| `sing-box-config` | sing-box 出站和路由规则片段（引用上面的规则集；未导出时内联），需要 sing-box 1.11+ | `nju-connect export sing-box-config`，把 `outbounds`、`route.rule_set` 和 `route.rules` 合并进配置（需要有 `direct` 出站和 `route.default_domain_resolver`） |
+| `xray` | Xray/V2Ray 出站和路由规则（JSON），适合 v2rayA、Xray | `nju-connect export xray`，把 `outbounds`、`routing.rules` 和 `routing.domainStrategy` 合并进配置 |
 | `pac` | PAC 文件：南大资源走 `127.0.0.1:1081`，其余直连 | `nju-connect export pac -o ~/nju.pac`，在浏览器或系统代理中设置 `file:///home/<用户名>/nju.pac` |
 | `list` | 纯文本列表（目标、端口、协议），可自行转换为其他格式 | `nju-connect export list` |
 
@@ -108,6 +110,15 @@ nju-connect export --list            # 查看已记住的导出文件
 nju-connect export --forget sing-box # 不再自动更新（文件保留）
 nju-connect export clash --refresh   # 先重新下载访问策略
 ```
+
+**按 IP 段匹配的南大网站**：学校的访问策略中有不少网站只以 IP 段出现（例如 `xk.nju.edu.cn`、`ehall.nju.edu.cn` 属于 `219.219.112.0/20`，`lms.nju.edu.cn` 属于 `202.119.32.0/19`），zju-connect 会解析域名后按 IP 走 VPN。为了让代理工具也这样处理，导出的规则会解析 `export.resolve_domains` 中的域名（默认 `nju.edu.cn`）再匹配 IP 段，其他域名不会因此多一次 DNS 查询：
+
+- Clash/mihomo：每个 IP 段生成 `IP-CIDR,…,no-resolve`（直接访问 IP 时）和 `AND,((DOMAIN-SUFFIX,nju.edu.cn),(IP-CIDR,…))`（只解析南大域名）两条规则
+- sing-box：`sing-box-config` 先按域名匹配规则集，再对南大域名执行 `resolve` 后按 IP 匹配
+- Xray：设置 `domainStrategy: IPOnDemand`。Xray 无法只解析部分域名，因此所有域名都会在经过这些规则时被解析一次
+- PAC：只对南大域名调用 `dnsResolve`
+
+所有格式都会让 VPN 服务器和节点地址（如 `219.219.118.25`）直连，避免开启 TUN 模式时 zju-connect 自己的连接被转发回自身。
 
 导出的 Clash 策略组为 `fallback` 类型：VPN 在线时走 zju-connect，zju-connect 停止时（例如在校内）自动改为直连。mihomo 只能读取其主目录下的规则集文件，因此当 `clash` 导出文件不在 Clash Verge Rev 或 `~/.config/mihomo` 目录中时，`clash-verge` / `clash-config` 会把规则直接写进脚本或片段。
 

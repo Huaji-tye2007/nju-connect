@@ -16,7 +16,8 @@ from .zju import download_resource
 FULL_RANGE = ((1, 65535),)
 
 # kind: "domain" (exact host), "subdomains" (any subdomain of value, not value
-# itself, like aTrust's *.example.com), or "cidr" (IPv4 network);
+# itself, like aTrust's *.example.com), "cidr" (IPv4 network), or "node" (a VPN
+# node zju-connect itself connects to, which must never go through the VPN);
 # network: None (tcp and udp), "tcp" or "udp"; ports: merged (lo, hi) ranges
 Entry = namedtuple("Entry", "kind value network ports")
 
@@ -63,7 +64,33 @@ def ipv4_networks(host):
     return None
 
 
-KIND_ORDER = {"domain": 0, "subdomains": 1, "cidr": 2}
+KIND_ORDER = {"node": 0, "domain": 1, "subdomains": 2, "cidr": 3}
+
+
+def routed(entries):
+    """Entries whose traffic goes through the VPN."""
+    return [e for e in entries if e.kind != "node"]
+
+
+def nodes(entries):
+    """VPN node addresses, which must stay DIRECT."""
+    return [e for e in entries if e.kind == "node"]
+
+
+def _node_entries(data):
+    found = {}
+    groups = data["data"]["appList"]["data"].get("config", {}).get("nodeGroupConf", {}).get("nodeGroupList")
+    for group in groups or []:
+        for info in group.get("addressInfo") or []:
+            host, _, port = str(info.get("address", "")).rpartition(":")
+            try:
+                ip = ipaddress.ip_address(host)
+                port = int(port)
+            except ValueError:
+                continue   # IPv6 in brackets or the {{sdpcHost}} placeholder (the server itself)
+            if ip.version == 4:
+                found.setdefault(f"{ip}/32", set()).add((port, port))
+    return [Entry("node", cidr, None, merge_ranges(ports)) for cidr, ports in found.items()]
 
 
 def parse_policy(resource):
@@ -115,6 +142,7 @@ def parse_policy(resource):
 
     entries = [Entry(kind, value, network, merge_ranges(ranges))
                for (kind, value, network), ranges in found.items()]
+    entries += _node_entries(data)
     entries.sort(key=lambda e: (KIND_ORDER[e.kind], e.value, e.network or ""))
     return entries, dict(skipped)
 

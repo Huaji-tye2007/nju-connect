@@ -40,6 +40,9 @@ SETTINGS_DEFAULTS = {
         "group_type": "fallback",
         "health_url": "http://lib.nju.edu.cn/",
         "health_interval": "300",
+        # domains resolved to check NJU's IP ranges (zju-connect also routes hosts by IP);
+        # empty = never resolve, * = resolve every domain
+        "resolve_domains": "nju.edu.cn",
     },
     "exports": {},                   # remembered exports: format = path
 }
@@ -209,6 +212,13 @@ class Option:
             if self.minimum is not None and value < self.minimum:
                 raise ValueError(f"{self.key} must be at least {self.minimum}")
             return value
+        if self.kind == "domainlist":
+            if raw in ("", "*"):
+                return raw
+            domains = [d.strip().lower().lstrip(".") for d in raw.split(",") if d.strip()]
+            if not all(re.fullmatch(r"[a-z0-9-]+(\.[a-z0-9-]+)+", d) for d in domains):
+                raise ValueError(f"{self.key} must be a comma-separated list of domains, * or empty")
+            return ", ".join(domains)
         if not raw and self.kind != "path":
             raise ValueError(f"{self.key} cannot be empty")
         if self.kind == "name":
@@ -276,6 +286,8 @@ OPTIONS = [
            ini=("export", "health_url"), kind="url", effects=[EXPORTS]),
     Option("export.health_interval", "Seconds between Clash health checks",
            ini=("export", "health_interval"), kind="int", minimum=30, effects=[EXPORTS]),
+    Option("export.resolve_domains", "Domains resolved to match NJU's IP ranges (comma list, * or empty)",
+           ini=("export", "resolve_domains"), kind="domainlist", effects=[EXPORTS]),
 ]
 OPTIONS_BY_KEY = {option.key: option for option in OPTIONS}
 
