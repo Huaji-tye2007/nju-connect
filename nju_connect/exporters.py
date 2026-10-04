@@ -290,13 +290,14 @@ def export(name, output=None, refresh=False, install=False):
         target = output or clash.verge_script_path()
         if not target:
             die("Clash Verge Rev not found; use -o PATH to write the script somewhere else")
-        # the script loads the rules from a rule-provider file inside Verge's directory
+        # the script loads the rules from a rule-provider file inside Verge's directory,
+        # which must be (re)written together with it
         exports = remembered()
+        ruleset = exports.get("clash") or clash.verge_ruleset_path()
+        changed = write_file(ruleset, render("clash", entries, skipped))
         if "clash" not in exports:
-            ruleset = clash.verge_ruleset_path()
-            write_file(ruleset, render("clash", entries, skipped))
             remember("clash", ruleset)
-            print(f"Wrote {ruleset} (remembered as the clash export)")
+        print(f"{'Wrote' if changed else 'Unchanged:'} {ruleset} (the clash export the script uses)")
         output = target
     if output is None:
         print(render(name, entries, skipped), end="")
