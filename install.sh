@@ -40,9 +40,15 @@ esac
 
 # Newest release tag of a repository: /releases/latest redirects to /releases/tag/<tag>
 latest_tag() {
-  local url
-  url="$(curl -fsSLI -o /dev/null -w '%{url_effective}' "https://github.com/$1/releases/latest")" ||
-    die "cannot reach GitHub to look up the latest release of $1"
+  local url="" attempt
+  for attempt in 1 2 3; do
+    if url="$(curl -fsSLI -m 30 -o /dev/null -w '%{url_effective}' "https://github.com/$1/releases/latest")"; then
+      break
+    fi
+    url=""
+    [ "$attempt" = 3 ] || sleep 2
+  done
+  [ -n "$url" ] || die "cannot reach GitHub to look up the latest release of $1"
   case "$url" in
     */releases/tag/?*) printf '%s\n' "${url##*/}" ;;
     *) die "no release found in $1" ;;
