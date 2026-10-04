@@ -26,7 +26,8 @@ from collections import defaultdict
 from datetime import datetime
 from pathlib import Path
 
-VERSION = "0.1.0"
+VERSION = "0.2.0"
+INSTALL_URL = "https://raw.githubusercontent.com/Huaji-tye2007/nju-connect/main/install.sh"
 
 HOME = Path.home()
 CONFIG_DIR = Path(os.environ.get("NJU_CONNECT_CONFIG_DIR")
@@ -130,6 +131,26 @@ def zju_connect_binary():
         if candidate and os.access(candidate, os.X_OK) and not os.path.isdir(candidate):
             return candidate
     die("zju-connect not found; rerun the installer or set NJU_CONNECT_ZJU_CONNECT")
+
+
+_fetch_resource_checked = False
+
+
+def require_fetch_resource():
+    """Make sure zju-connect supports --fetch-resource (added in the NJU fork)."""
+    global _fetch_resource_checked
+    if _fetch_resource_checked:
+        return
+    zju = zju_connect_binary()
+    try:
+        help_text = subprocess.run([zju, "-h"], capture_output=True, text=True, timeout=10)
+        supported = "fetch-resource" in help_text.stdout + help_text.stderr
+    except (OSError, subprocess.TimeoutExpired):
+        supported = False
+    if not supported:
+        raise RuntimeError(f"{zju} is too old: it has no --fetch-resource option. "
+                           "Run `nju-connect upgrade` to install a zju-connect build that has it.")
+    _fetch_resource_checked = True
 
 
 def self_path():
@@ -464,6 +485,7 @@ def build_rules(resource):
 
 def fetch_resource():
     """Download the resource with the saved session; returns the raw JSON."""
+    require_fetch_resource()
     with tempfile.TemporaryDirectory() as tmp:
         out = Path(tmp) / "resource.json"
         proc = subprocess.run([zju_connect_binary(), "-config", str(CONFIG_TOML),
@@ -981,6 +1003,10 @@ class Supervisor:
 
 def cmd_daemon(args):
     config, settings = load_config(), load_settings()
+    try:
+        require_fetch_resource()
+    except RuntimeError as e:
+        log(f"warning: {e} The VPN still works, but the ruleset won't be updated.")
     for problem in instance_problems(config):
         log(f"warning: {problem}")
     supervisor = Supervisor(settings, config)
@@ -997,6 +1023,18 @@ def cmd_daemon(args):
         except Exception as e:  # keep supervising whatever happens
             log(f"Supervisor error: {e!r}")
         time.sleep(interval)
+
+
+def cmd_upgrade(args):
+    """Rerun the installer; it keeps the configuration and restarts the service."""
+    env = dict(os.environ, NJU_CONNECT_PREFIX=str(Path(self_path()).parent),
+               NJU_CONNECT_NONINTERACTIVE="1")
+    if args.version:
+        env["NJU_CONNECT_VERSION"] = args.version
+    script = subprocess.run(["curl", "-fsSL", INSTALL_URL], capture_output=True, text=True)
+    if script.returncode != 0:
+        die(f"cannot download the installer from {INSTALL_URL}")
+    sys.exit(subprocess.run(["bash", "-s"], input=script.stdout, text=True, env=env).returncode)
 
 
 def cmd_uninstall(args):
@@ -1059,6 +1097,10 @@ def main():
 
     p = sub.add_parser("check", help="show network, VPN, service and ruleset state")
     p.set_defaults(func=cmd_check)
+
+    p = sub.add_parser("upgrade", help="install the latest nju-connect and zju-connect")
+    p.add_argument("--version", help="nju-connect release tag to install instead of the latest")
+    p.set_defaults(func=cmd_upgrade)
 
     p = sub.add_parser("uninstall", help="remove the service and binaries")
     p.add_argument("--purge", action="store_true", help="also delete config and saved session")

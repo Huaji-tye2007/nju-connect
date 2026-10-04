@@ -11,17 +11,17 @@
 需要 Linux、`curl` 和 Python 3.8+。
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/Huaji-tye2007/zju-connect/main/nju-connect/install.sh | bash
+curl -fsSL https://raw.githubusercontent.com/Huaji-tye2007/nju-connect/main/install.sh | bash
 ```
 
 安装程序会：
 
-1. 从 [Releases](https://github.com/Huaji-tye2007/zju-connect/releases) 下载对应架构的 `zju-connect`（没有预编译文件且装有 Go 时从源码编译）
+1. 从 [Huaji-tye2007/zju-connect](https://github.com/Huaji-tye2007/zju-connect/releases) 下载对应架构的 `zju-connect`（没有预编译文件且装有 Go 时从源码编译），从本仓库 [Releases](https://github.com/Huaji-tye2007/nju-connect/releases) 下载 `nju-connect`
 2. 把 `zju-connect` 和 `nju-connect` 安装到 `~/.local/bin`
 3. 运行 `nju-connect setup`，询问学号、密码、登录方式以及是否修改默认代理端口（SOCKS5 1080 / HTTP 1081，直接回车保持默认）
 4. 询问是否启用后台服务
 
-重新运行安装命令即可升级，已有配置不会被覆盖。可用 `NJU_CONNECT_VERSION=<tag>` 安装指定版本，`NJU_CONNECT_PREFIX=<目录>` 修改安装位置。
+运行 `nju-connect upgrade`（或重新运行安装命令）即可升级，已有配置不会被覆盖，后台服务会自动重启。可用 `NJU_CONNECT_VERSION=<tag>` / `ZJU_CONNECT_VERSION=<tag>` 安装指定版本，`NJU_CONNECT_PREFIX=<目录>` 修改安装位置。
 
 ## 首次使用
 
@@ -45,6 +45,7 @@ nju-connect service install   # 启用后台服务
 | `nju-connect clash-script` | 输出 Clash Verge Rev 全局扩展脚本；`--install` 直接写入（自动备份旧脚本），`--format yaml` 输出 mihomo 配置片段，`--inline` 把规则直接写进脚本 |
 | `nju-connect service install\|uninstall\|start\|stop\|restart\|status\|logs` | 管理 systemd 用户服务 |
 | `nju-connect check` | 查看网络位置、VPN、服务和规则集状态 |
+| `nju-connect upgrade` | 升级到最新版本 |
 | `nju-connect uninstall [--purge]` | 删除服务和程序；`--purge` 同时删除配置和登录状态 |
 
 如果已有 zju-connect 在运行，或代理端口被占用，`connect` 和 `service install` 会显示进程号并提示先停止它（`--force` 可跳过检查）。
@@ -93,3 +94,13 @@ nju-connect service install   # 启用后台服务
 - **每次都要短信验证码**：运行 `nju-connect trust` 把本机设为授信终端。学校限制每个账号最多 3 台电脑、3 台手机；超过时会失败（错误码 75500311），需要先在其他设备上取消授信。
 - **开启 Clash TUN 模式后服务误判为在校内**：TUN 会把内网 DNS 查询也转发进 VPN。请在 TUN 设置中把 10.12.253.4、10.28.253.4 排除，或关闭 TUN 使用系统代理。
 - **不使用 systemd**：在桌面自启动中运行 `nju-connect daemon` 即可。
+- **提示 zju-connect 版本过旧**：生成规则集需要 `--fetch-resource` 选项，目前只有 [Huaji-tye2007/zju-connect](https://github.com/Huaji-tye2007/zju-connect) 的版本支持。运行 `nju-connect upgrade` 安装。
+
+## 致谢
+
+- [zju-connect](https://github.com/Mythologyli/zju-connect)（基于 [EasierConnect](https://github.com/lyc8503/EasierConnect)）：VPN 客户端本体，本项目使用其 [分支](https://github.com/Huaji-tye2007/zju-connect)
+- [simonzxm/nju-connect](https://github.com/simonzxm/nju-connect)：南大配置和使用方式的参考
+
+## 许可证
+
+[GPL-3.0](LICENSE)
