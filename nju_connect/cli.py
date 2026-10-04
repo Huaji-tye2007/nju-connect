@@ -62,7 +62,7 @@ def cmd_export(args):
         die("choose a format (" + ", ".join(exporters.FORMATS) + "), or use --list / --forget")
     else:
         try:
-            exporters.export(args.format, args.output, args.refresh, args.install)
+            exporters.export(args.format, args.output, args.refresh, args.install, args.inline)
         except RuntimeError as e:
             die(str(e))
 
@@ -227,6 +227,9 @@ def build_parser():
     p.add_argument("-o", "--output", help="write to this file and keep it up to date")
     p.add_argument("--install", action="store_true",
                    help="clash-verge only: write Clash Verge Rev's global script")
+    p.add_argument("--inline", action="store_true",
+                   help="embed the rules instead of referencing the clash/sing-box export files "
+                        "(for a client that cannot read them)")
     p.add_argument("--refresh", action="store_true", help="download the access policy again first")
     p.add_argument("--list", action="store_true", help="show the remembered exports")
     p.add_argument("--forget", metavar="FORMAT", help="stop keeping an export up to date")

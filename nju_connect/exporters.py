@@ -246,12 +246,27 @@ def remembered(settings=None):
     return dict(settings["exports"])
 
 
-def render(name, entries=None, skipped=None, refresh=False):
+INLINE = "inline:"   # prefix of a remembered path whose export embeds the rules
+
+
+def remembered_paths():
+    """{format: path} of the remembered exports, without the inline marker."""
+    return {name: value[len(INLINE):] if value.startswith(INLINE) else value
+            for name, value in remembered().items()}
+
+
+def render(name, entries=None, skipped=None, refresh=False, inline=False):
+    """Render a format. clash-verge/clash-config and sing-box-config reference the remembered
+    clash/sing-box rule files; inline=True embeds the rules instead (for another client that
+    cannot read those files)."""
     if name not in FORMATS:
         die(f"unknown format {name!r}; choose from: {', '.join(FORMATS)}")
     if entries is None:
         entries, skipped = load_policy(refresh)
-    return FORMATS[name][0](entries, skipped or {}, load_config(), load_settings(), remembered())
+    exports = remembered_paths()
+    if inline:
+        exports = {k: v for k, v in exports.items() if k not in ("clash", "sing-box")}
+    return FORMATS[name][0](entries, skipped or {}, load_config(), load_settings(), exports)
 
 
 def write_file(path, content):
@@ -269,9 +284,9 @@ def write_file(path, content):
     return True
 
 
-def remember(name, path):
+def remember(name, path, inline=False):
     settings = load_settings()
-    settings["exports"][name] = str(Path(path).expanduser().resolve())
+    settings["exports"][name] = (INLINE if inline else "") + str(Path(path).expanduser().resolve())
     save_settings(settings)
 
 
@@ -282,7 +297,7 @@ def forget(name):
     save_settings(settings)
 
 
-def export(name, output=None, refresh=False, install=False):
+def export(name, output=None, refresh=False, install=False, inline=False):
     entries, skipped = load_policy(refresh)
     if install:
         if name != "clash-verge":
@@ -292,7 +307,7 @@ def export(name, output=None, refresh=False, install=False):
             die("Clash Verge Rev not found; use -o PATH to write the script somewhere else")
         # the script loads the rules from a rule-provider file inside Verge's directory,
         # which must be (re)written together with it
-        exports = remembered()
+        exports = remembered_paths()
         ruleset = exports.get("clash") or clash.verge_ruleset_path()
         changed = write_file(ruleset, render("clash", entries, skipped))
         if "clash" not in exports:
@@ -300,10 +315,10 @@ def export(name, output=None, refresh=False, install=False):
         print(f"{'Wrote' if changed else 'Unchanged:'} {ruleset} (the clash export the script uses)")
         output = target
     if output is None:
-        print(render(name, entries, skipped), end="")
+        print(render(name, entries, skipped, inline=inline), end="")
         return
-    changed = write_file(output, render(name, entries, skipped))
-    remember(name, output)
+    changed = write_file(output, render(name, entries, skipped, inline=inline))
+    remember(name, output, inline)
     print(f"{'Wrote' if changed else 'Unchanged:'} {Path(output).expanduser()} "
           f"({len(entries)} entries); it will be kept up to date")
     if name == "clash-verge":
@@ -322,10 +337,12 @@ def refresh_exports(entries=None, skipped=None, quiet=False):
     for name in sorted(exports, key=lambda n: n not in ("clash", "sing-box")):
         if name not in FORMATS:
             continue
-        if write_file(exports[name], render(name, entries, skipped)):
+        inline = exports[name].startswith(INLINE)
+        path = exports[name][len(INLINE):] if inline else exports[name]
+        if write_file(path, render(name, entries, skipped, inline=inline)):
             changed += 1
             if not quiet:
-                print(f"Updated {exports[name]} ({name})")
+                print(f"Updated {path} ({name})")
     return changed
 
 
@@ -334,7 +351,9 @@ def list_exports():
     if not exports:
         print("No remembered exports; create one with `nju-connect export FORMAT -o PATH`")
     for name, path in exports.items():
+        inline = path.startswith(INLINE)
+        path = path[len(INLINE):] if inline else path
         p = Path(path)
         age = f"updated {(datetime.now().timestamp() - p.stat().st_mtime) / 3600:.1f}h ago" \
             if p.exists() else "missing"
-        print(f"{name:<13} {path}  ({age})")
+        print(f"{name:<16} {path}  ({age}{', rules inline' if inline else ''})")

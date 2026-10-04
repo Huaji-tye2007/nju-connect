@@ -88,6 +88,8 @@ nju-connect config set account.password       # 不写值时会提示输入（�
 
 ## 与代理工具配合
 
+> 各客户端（Clash Verge Rev、FlClash、Mihomo Party、mihomo、sing-box、Xray、v2rayN、v2rayA、浏览器 PAC）的详细步骤见 [docs/proxy-clients.md](docs/proxy-clients.md)。
+
 **最简单的方式**：连接后直接把应用、浏览器或系统代理设置为 `127.0.0.1:1080`（SOCKS5）或 `127.0.0.1:1081`（HTTP）。zju-connect 会根据学校的访问策略自行分流：南大资源走 VPN，其余直连。
 
 **已经在用代理工具**（Clash、sing-box、Xray 等，需要只把南大流量交给 zju-connect）时，用 `nju-connect export` 生成对应格式的规则。规则按学校下发的访问策略精确生成（域名、端口、TCP/UDP），使用 `-o` 写入文件后会被记住，后台服务更新访问策略时会自动重新生成：
