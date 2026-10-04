@@ -80,7 +80,7 @@ nju-connect config set account.password       # 不写值时会提示输入（�
 | `daemon.mode`                                                    | `auto`：只在校外连接；`always`：始终连接                                             | `auto`                                        |
 | `daemon.check_interval`                                          | 检查网络的间隔（秒，≥10）                                                            | `60`                                          |
 | `daemon.ruleset_interval`                                        | 更新访问策略和导出文件的间隔（秒，≥300）                                             | `1800`                                        |
-| `campus.dns_servers` / `campus.probe_name`                       | 用于判断是否在校园网的内网 DNS 和查询域名                                            | `10.12.253.4, 10.28.253.4` / `www.nju.edu.cn` |
+| `campus.dns_servers` / `campus.probe_name`                       | 用于判断是否在校园网的内网 DNS（`auto`：取自访问策略）和查询域名                     | `auto` / `www.nju.edu.cn`                     |
 | `export.proxy_name` / `export.group_name`                        | 导出的 Clash/Xray 配置中的代理和策略组名称                                           | `NJUConnect` / `NJU`                          |
 | `export.group_type`                                              | Clash 策略组类型：`fallback`、`url-test`、`select`                                   | `fallback`                                    |
 | `export.health_url` / `export.health_interval`                   | Clash 策略组健康检查地址（需能通过 VPN 访问）和间隔（秒，≥30）                       | `http://lib.nju.edu.cn/` / `300`              |
@@ -124,7 +124,8 @@ nju-connect export clash --refresh   # 先重新下载访问策略
 
 服务每分钟检查一次：
 
-- **是否在校园网**（`auto` 模式）：直接向南大内网 DNS（10.12.253.4、10.28.253.4）查询，只有在校园网内才会得到应答。校外启动 zju-connect，校内停止；`always` 模式下始终连接。
+- **是否在校园网**（`auto` 模式）：直接（不经过 VPN）向南大内网 DNS 查询 `www.nju.edu.cn`。这些服务器使用 10.x 私有地址，只有在校园网内才能访问：有应答说明在校内；在校外，请求会发往家里的路由器而超时（每台 2 秒），说明在校外；完全没有网络时直接报错，视为离线。校外启动 zju-connect，校内停止；`always` 模式下始终连接。
+  - 内网 DNS 地址默认（`campus.dns_servers = auto`）从访问策略中自动获取：策略中授权给 VPN 用户、开放 UDP 53 端口的私有地址（目前是 10.12.253.4、10.28.253.4），以及服务器下发的 DNS 设置。学校更换地址后，服务每 30 分钟更新一次访问策略时会自动跟上；还没有下载过访问策略时使用内置的这两个地址。公网 DNS 在校外也会应答，因此不会被采用。`nju-connect service status` 会显示当前使用的地址及来源，也可以用 `nju-connect config set campus.dns_servers 地址,地址` 手动指定。
 - **VPN 是否可用**：通过 SOCKS5 代理向内网 DNS 查询，连续 3 次失败则重启 zju-connect。
 - **访问策略**：VPN 可用时每 30 分钟更新一次，并重新生成已记住的导出文件。
 - **需要登录**：还没有登录状态，或登录状态过期、服务器要求短信验证码时，服务不会反复重试（每次重试都会发送一条短信），而是弹出桌面通知并等待，直到 `nju-connect login` 保存新的登录状态。
@@ -144,9 +145,10 @@ nju-connect export clash --refresh   # 先重新下载访问策略
 ## 常见问题
 
 - **每次都要短信验证码**：运行 `nju-connect trust` 把本机设为授信终端。学校限制每个账号最多 3 台电脑、3 台手机；超过时会失败（错误码 75500311），需要先在其他设备上取消授信。
-- **开启代理工具的 TUN 模式后服务误判为在校内**：TUN 会把内网 DNS 查询也转发进 VPN。请在 TUN 设置中排除 10.12.253.4、10.28.253.4，或改用系统代理。
+- **开启代理工具的 TUN 模式后服务误判为在校内**：TUN 会把内网 DNS 查询也转发进 VPN。请在 TUN 设置中排除 `nju-connect service status` 中“campus check”显示的地址（目前是 10.12.253.4、10.28.253.4），或改用系统代理。
 - **提示 zju-connect 版本过旧**：访问策略下载需要 `--fetch-resource` 选项，目前只有 [Huaji-tye2007/zju-connect](https://github.com/Huaji-tye2007/zju-connect) 的版本支持。运行 `nju-connect upgrade` 安装。
 - **不想使用 systemd ?**：把 `nju-connect service run` 加入桌面自启动即可。
+- **`service start` 和 `service enable` 的区别**：`start` 只启动这一次，重新登录或重启后不会自动运行；`enable` 会在每次登录系统时自动启动（并立即启动）。`service status` 中显示 `starts automatically` 即表示已启用。服务随用户登录启动；如果希望开机后、登录前就运行，可执行 `loginctl enable-linger $USER`（此时登录前看不到桌面通知）。
 
 ## 参与开发
 

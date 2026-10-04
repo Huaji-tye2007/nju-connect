@@ -29,8 +29,9 @@ SETTINGS_DEFAULTS = {
         "ruleset_interval": "1800",  # how often the access policy and exports are refreshed
     },
     "campus": {
-        # NJU's internal DNS servers only answer from inside the campus network
-        "dns_servers": "10.12.253.4, 10.28.253.4",
+        # NJU's internal DNS servers only answer from inside the campus network;
+        # auto = the private DNS servers listed in the access policy
+        "dns_servers": "auto",
         "probe_name": "www.nju.edu.cn",
     },
     "export": {
@@ -134,14 +135,22 @@ def load_settings():
     settings = configparser.ConfigParser()
     settings.read_dict(SETTINGS_DEFAULTS)
     settings.read(paths.SETTINGS_FILE)
-    if settings.has_section("clash") or settings.has_section("ruleset"):
+    if settings.has_section("clash") or settings.has_section("ruleset") \
+            or settings["campus"]["dns_servers"] == OLD_CAMPUS_DNS:
         migrate_settings(settings)
         save_settings(settings)
     return settings
 
 
+# the hard-coded campus DNS default before v0.5.5, which became "auto"
+OLD_CAMPUS_DNS = "10.12.253.4, 10.28.253.4"
+
+
 def migrate_settings(settings):
-    """Convert v0.4 settings ([clash], [ruleset]) to [export] and remembered exports."""
+    """Convert older settings: v0.4 [clash]/[ruleset] to [export] and remembered exports,
+    and the old fixed campus DNS default to "auto"."""
+    if settings["campus"]["dns_servers"] == OLD_CAMPUS_DNS:
+        settings["campus"]["dns_servers"] = "auto"
     if settings.has_section("clash"):
         for key in SETTINGS_DEFAULTS["export"]:
             if settings.has_option("clash", key):
@@ -235,12 +244,14 @@ class Option:
             if not re.fullmatch(r"[A-Za-z0-9.-]+", raw):
                 raise ValueError(f"{self.key} must be a host name")
         elif self.kind == "ipv4list":
+            if raw == "auto":
+                return raw
             servers = [s.strip() for s in raw.split(",") if s.strip()]
             try:
                 if not servers or any(ipaddress.ip_address(s).version != 4 for s in servers):
                     raise ValueError
             except ValueError:
-                raise ValueError(f"{self.key} must be a comma-separated list of IPv4 addresses")
+                raise ValueError(f"{self.key} must be auto or a comma-separated list of IPv4 addresses")
             return ", ".join(servers)
         return raw
 
@@ -272,7 +283,7 @@ OPTIONS = [
            kind="int", minimum=10, effects=[RESTART], advanced=True),
     Option("daemon.ruleset_interval", "Seconds between access-policy (and export) updates",
            ini=("daemon", "ruleset_interval"), kind="int", minimum=300, effects=[RESTART], advanced=True),
-    Option("campus.dns_servers", "Campus DNS servers used to detect the campus network",
+    Option("campus.dns_servers", "Campus DNS servers used to detect the campus network (auto or a list)",
            ini=("campus", "dns_servers"), kind="ipv4list", effects=[RESTART], advanced=True),
     Option("campus.probe_name", "Host name asked for when probing the campus DNS",
            ini=("campus", "probe_name"), kind="host", effects=[RESTART], advanced=True),

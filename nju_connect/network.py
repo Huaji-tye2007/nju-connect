@@ -21,8 +21,31 @@ def dns_answered(reply):
     return len(reply) >= 12 and bool(reply[2] & 0x80) and reply[3] & 0x0F == 0
 
 
+# used when the setting is "auto" but no access policy has been downloaded yet
+FALLBACK_CAMPUS_DNS = ["10.12.253.4", "10.28.253.4"]
+_policy_dns_cache = (None, [])
+
+
+def campus_servers_with_source(settings):
+    """(servers, source) for the campus check; source says where the list came from."""
+    global _policy_dns_cache
+    value = settings["campus"]["dns_servers"].strip()
+    if value != "auto":
+        return [s.strip() for s in value.split(",") if s.strip()], "configured"
+    try:
+        mtime = paths.RESOURCE.stat().st_mtime
+        if _policy_dns_cache[0] != mtime:   # the policy is ~0.5 MB; parse it only when it changes
+            from .policy import campus_dns_servers
+            _policy_dns_cache = (mtime, campus_dns_servers(paths.RESOURCE.read_bytes()))
+        if _policy_dns_cache[1]:
+            return _policy_dns_cache[1], "from the access policy"
+    except (OSError, ValueError, KeyError):
+        pass
+    return FALLBACK_CAMPUS_DNS, "built-in default"
+
+
 def campus_servers(settings):
-    return [s.strip() for s in settings["campus"]["dns_servers"].split(",") if s.strip()]
+    return campus_servers_with_source(settings)[0]
 
 
 def on_campus(settings):

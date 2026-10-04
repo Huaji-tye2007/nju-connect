@@ -159,6 +159,34 @@ def update_policy(force=False, min_ratio=0.5):
     return entries, skipped
 
 
+def campus_dns_servers(resource):
+    """NJU's internal DNS servers, as listed in the access policy.
+
+    The policy grants VPN clients UDP port 53 on these private addresses; they only
+    answer from inside the campus network, which is what the campus check relies on.
+    Public resolvers would answer from anywhere, so only private addresses count.
+    """
+    data = json.loads(resource)
+    servers = []
+    entries, _ = parse_policy(resource)
+    for e in entries:
+        if (e.kind == "cidr" and e.value.endswith("/32") and e.network in (None, "udp")
+                and not all_ports(e) and any(lo <= 53 <= hi for lo, hi in e.ports)):
+            servers.append(e.value[:-3])
+    option = (data["data"].get("sdpPolicy", {}).get("data", {}).get("clientOption", {})
+              .get("dnsOption") or {})
+    servers += [option.get(k, "") for k in ("firstDNS", "secondDNS")]
+    found = []
+    for server in servers:
+        try:
+            ip = ipaddress.ip_address(server)
+        except ValueError:
+            continue
+        if ip.version == 4 and ip.is_private and server not in found:
+            found.append(server)
+    return found
+
+
 def load_policy(refresh=False, force=False):
     """Entries from the cached resource.json, downloading it first if needed."""
     if refresh or not paths.RESOURCE.exists():

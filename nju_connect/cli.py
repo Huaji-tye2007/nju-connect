@@ -10,11 +10,20 @@ from pathlib import Path
 from . import INSTALL_URL, VERSION, __doc__ as PACKAGE_DOC, configure, exporters, paths, service
 from .config import DEFAULT_HTTP_PORT, DEFAULT_SERVER, bind_port, load_config, load_settings, socks_address
 from .daemon import run_daemon
-from .network import on_campus, port_in_use, running_instances, vpn_healthy
+from .network import campus_servers_with_source, on_campus, port_in_use, running_instances, vpn_healthy
 from .util import die
 from .zju import untrust_device
 
-SERVICE_ACTIONS = ("start", "stop", "restart", "status", "logs", "enable", "disable", "run")
+SERVICE_ACTIONS = {
+    "start": "start the service now (logs in first if the saved session has expired)",
+    "stop": "stop the service and zju-connect",
+    "restart": "restart the service, e.g. after editing the configuration by hand",
+    "status": "show mode, network, VPN, proxies, service, session and exports",
+    "logs": "follow the service log (journalctl)",
+    "enable": "start automatically whenever you log in, and start now",
+    "disable": "stop, and no longer start automatically",
+    "run": "run the service loop in this terminal (for systems without systemd)",
+}
 SERVICE_ALIASES = {"install": "enable", "uninstall": "disable"}   # names used before v0.5
 
 
@@ -66,6 +75,8 @@ def status():
     print("mode:         ", "always connected" if mode == "always" else "auto (connects only off campus)")
     campus = on_campus(settings)
     print("network:      ", {True: "on campus", False: "off campus", None: "offline"}[campus])
+    servers, source = campus_servers_with_source(settings)
+    print("campus check: ", f"DNS {', '.join(servers)} ({source})")
     listening = port_in_use(socks, host)
     print("VPN:          ", "connected" if listening and vpn_healthy(settings, (host, socks)) else "not connected")
     print("proxies:      ", f"SOCKS5 {host}:{socks}, HTTP {host}:{http}"
@@ -88,9 +99,9 @@ def cmd_service(args):
     elif action == "logs":
         service.logs()
     elif action == "start":
-        service.start(args.force)
+        service.start(getattr(args, "force", False))
     elif action == "enable":
-        service.enable(args.force)
+        service.enable(getattr(args, "force", False))
     else:
         getattr(service, action)()
 
@@ -136,15 +147,44 @@ def cmd_uninstall(args):
         print(f"Kept {paths.CONFIG_DIR} and {paths.STATE_DIR} (use --purge to remove them)")
 
 
-EXPORT_EPILOG = """formats:
-""" + "\n".join(f"  {name:<13} {desc}" for name, (_, desc) in exporters.FORMATS.items()) + """
+def _can_color():
+    """Same decision argparse makes for its own colors (NO_COLOR, FORCE_COLOR, TERM, a tty)."""
+    try:
+        from _colorize import can_colorize   # Python 3.13+
+        return can_colorize(file=sys.stdout)
+    except (ImportError, TypeError):
+        return (sys.stdout.isatty() and "NO_COLOR" not in os.environ
+                and os.environ.get("TERM") != "dumb")
 
-examples:
-  nju-connect export clash-verge --install          Clash Verge Rev global script
-  nju-connect export clash -o ~/.config/mihomo/ruleset/nju-vpn.yaml
-  nju-connect export sing-box -o ~/nju-vpn.json     then compile with `sing-box rule-set compile`
-  nju-connect export pac -o ~/nju.pac               then set file:///home/<you>/nju.pac as proxy URL
-Files written with -o are remembered and kept up to date by the service."""
+
+def export_epilog():
+    color = _can_color()
+
+    def c(text, code):   # argparse's palette: headings blue, names green, options cyan
+        return f"\033[{code}m{text}\033[0m" if color else text
+
+    heading, name, option, prog = "1;34", "1;32", "1;36", "1;35"
+    lines = [c("formats:", heading)]
+    lines += [f"  {c(f'{fmt:<16}', name)}{desc}" for fmt, (_, desc) in exporters.FORMATS.items()]
+    lines += ["", c("examples:", heading)]
+    examples = [
+        ("Clash Verge Rev: global script, plus the ruleset it loads", "clash-verge", "--install", ""),
+        ("other mihomo clients: a rule-provider file inside mihomo's directory",
+         "clash", "-o", "~/.config/mihomo/ruleset/nju-vpn.yaml"),
+        ("sing-box: rule-set file, then merge the printed outbound and route rules",
+         "sing-box", "-o", "~/nju-vpn.json"),
+        ("", "sing-box-config", "", ""),
+        ("Xray / V2Ray: merge the printed outbounds and routing into your config", "xray", "", ""),
+        ("browsers / system proxy: use file:///home/<you>/nju.pac as the proxy URL", "pac", "-o", "~/nju.pac"),
+    ]
+    for note, fmt, flag, path in examples:
+        if note:
+            lines.append(f"  # {note}")
+        lines.append("  " + " ".join(x for x in (c("nju-connect", prog), "export", c(fmt, name),
+                                                c(flag, option) if flag else "", path) if x))
+    lines += ["", f"Files written with {c('-o', option)} are remembered and kept up to date by the service;",
+              f"see them with {c('--list', option)}, stop with {c('--forget', option)} FORMAT."]
+    return "\n".join(lines)
 
 
 def build_parser():
@@ -162,11 +202,13 @@ def build_parser():
 
     p = sub.add_parser("service", help="control the background service that runs zju-connect",
                        description="The service is the only thing that runs zju-connect.")
-    p.add_argument("action", choices=SERVICE_ACTIONS + tuple(SERVICE_ALIASES),
-                   metavar="{" + ",".join(SERVICE_ACTIONS) + "}",
-                   help="start/stop/restart it, show status, follow logs, enable/disable autostart "
-                        "at login, or run it in this terminal (systems without systemd)")
-    p.add_argument("--force", action="store_true", help="start even if another zju-connect is running")
+    actions = p.add_subparsers(dest="action", required=True, metavar="ACTION")
+    for name, text in SERVICE_ACTIONS.items():
+        q = actions.add_parser(name, help=text, description=text[0].upper() + text[1:] + ".")
+        if name in ("start", "enable"):
+            q.add_argument("--force", action="store_true", help="start even if another zju-connect is running")
+    for alias in SERVICE_ALIASES:   # hidden: not listed in the help
+        actions.add_parser(alias).add_argument("--force", action="store_true")
     p.set_defaults(func=cmd_service)
 
     p = sub.add_parser("config", help="show or change individual settings")
@@ -180,7 +222,7 @@ def build_parser():
     p.set_defaults(func=cmd_config)
 
     p = sub.add_parser("export", help="rules for Clash, sing-box, Xray or a PAC file",
-                       epilog=EXPORT_EPILOG, formatter_class=argparse.RawDescriptionHelpFormatter)
+                       epilog=export_epilog(), formatter_class=argparse.RawDescriptionHelpFormatter)
     p.add_argument("format", nargs="?", choices=tuple(exporters.FORMATS), metavar="FORMAT")
     p.add_argument("-o", "--output", help="write to this file and keep it up to date")
     p.add_argument("--install", action="store_true",
