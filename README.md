@@ -1,15 +1,15 @@
 # NJU Connect CLI
 
-基于 [zju-connect](https://github.com/Mythologyli/zju-connect) 的南京大学 aTrust VPN 命令行工具（Linux）：
+基于 [zju-connect](https://github.com/Mythologyli/zju-connect) 的南京大学 aTrust VPN Linux 命令行工具
 
 - 一条命令安装，账号密码单独保存在权限为 600 的配置文件中
-- 后台服务自动判断是否在校园网：校外自动连接 VPN，回到校内自动断开（也可设为始终连接）
-- 连接后在本机提供 SOCKS5 / HTTP 代理，南大资源走 VPN，其余直连
-- 可选：根据学校下发给你账号的访问策略，导出 Clash/mihomo、sing-box、Xray/V2Ray 规则或 PAC 文件，并自动保持最新
+- 后台服务自动判断是否在校园网：校外自动连接 VPN，回到校内自动断开；也可设为始终连接
+- 可以根据学校下发的访问策略，导出 Clash/mihomo、sing-box、Xray/V2Ray 规则或 PAC 文件，并自动保持最新
+- 连接后在本机提供 SOCKS5 / HTTP 代理服务，南大资源走 VPN ，其余直连
 
 ## 安装
 
-需要 Linux、`curl` 和 Python 3.8+。
+需要 Linux环境、`curl` 和 Python 3.8+。
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/Huaji-tye2007/nju-connect-cli/main/install.sh | bash
@@ -48,16 +48,16 @@ nju-connect service run       # 在当前终端运行（没有 systemd 的系统
 
 ## 命令
 
-| 命令 | 作用 |
-|---|---|
-| `nju-connect setup [--advanced]` | 首次配置：账号、端口、首次登录、后台服务；`--advanced` 还会询问连接模式、检查间隔和校园网检测设置 |
-| `nju-connect login` | 在终端中登录（需要时输入短信验证码）并保存登录状态 |
-| `nju-connect service ...` | 控制后台服务，见上文 |
-| `nju-connect config show\|get\|set` | 查看或修改单项设置，见下文「配置」 |
-| `nju-connect export ...` | 为代理工具导出规则，见下文「与代理工具配合」 |
-| `nju-connect trust` / `untrust` | 把本机设为授信终端 / 取消授信（授信后登录免短信） |
-| `nju-connect upgrade` | 升级到最新版本 |
-| `nju-connect uninstall [--purge]` | 先取消本机的授信（`--keep-trust` 跳过），再删除服务和程序；`--purge` 同时删除配置和登录状态 |
+| 命令                                | 作用                                                                                              |
+| ----------------------------------- | ------------------------------------------------------------------------------------------------- |
+| `nju-connect setup [--advanced]`    | 首次配置：账号、端口、首次登录、后台服务；`--advanced` 还会询问连接模式、检查间隔和校园网检测设置 |
+| `nju-connect login`                 | 在终端中登录（需要时输入短信验证码）并保存登录状态                                                |
+| `nju-connect service ...`           | 控制后台服务，见上文                                                                              |
+| `nju-connect config show\|get\|set` | 查看或修改单项设置，见下文「配置」                                                                |
+| `nju-connect export ...`            | 为代理工具导出规则，见下文「与代理工具配合」                                                      |
+| `nju-connect trust` / `untrust`     | 把本机设为授信终端 / 取消授信（授信后登录免短信）                                                 |
+| `nju-connect upgrade`               | 升级到最新版本                                                                                    |
+| `nju-connect uninstall [--purge]`   | 先取消本机的授信（`--keep-trust` 跳过），再删除服务和程序；`--purge` 同时删除配置和登录状态       |
 
 ## 配置
 
@@ -72,21 +72,19 @@ nju-connect config set account.password       # 不写值时会提示输入（�
 
 修改后会自动生效：涉及连接或服务的设置会重启正在运行的服务，涉及导出的设置会重新生成已记住的导出文件。非法的值会被拒绝，文件保持不变。
 
-| 设置 | 含义 | 默认值 |
-|---|---|---|
-| `account.username` / `account.password` / `account.login_domain` | 学号、密码、登录域 | `setup` 时填写 |
-| `server.address` / `server.port` | aTrust 服务器 | `vpn.nju.edu.cn` / `443` |
-| `proxy.socks_port` / `proxy.http_port` | 本机代理端口（仅监听 127.0.0.1） | `1080` / `1081` |
-| `daemon.mode` | `auto`：只在校外连接；`always`：始终连接 | `auto` |
-| `daemon.check_interval` | 检查网络的间隔（秒，≥10） | `60` |
-| `daemon.ruleset_interval` | 更新访问策略和导出文件的间隔（秒，≥300） | `1800` |
-| `campus.dns_servers` / `campus.probe_name` | 用于判断是否在校园网的内网 DNS 和查询域名 | `10.12.253.4, 10.28.253.4` / `www.nju.edu.cn` |
-| `export.proxy_name` / `export.group_name` | 导出的 Clash/Xray 配置中的代理和策略组名称 | `NJUConnect` / `NJU` |
-| `export.group_type` | Clash 策略组类型：`fallback`、`url-test`、`select` | `fallback` |
-| `export.health_url` / `export.health_interval` | Clash 策略组健康检查地址（需能通过 VPN 访问）和间隔（秒，≥30） | `http://lib.nju.edu.cn/` / `300` |
-| `export.resolve_domains` | 为匹配学校 IP 段而解析的域名（逗号分隔；`*` 表示全部解析，留空表示从不解析），见下文 | `nju.edu.cn` |
-
-不需要填写手机号：南大使用密码登录，需要短信验证时 zju-connect 会从服务器获取手机号。
+| 设置                                                             | 含义                                                                                 | 默认值                                        |
+| ---------------------------------------------------------------- | ------------------------------------------------------------------------------------ | --------------------------------------------- |
+| `account.username` / `account.password` / `account.login_domain` | 学号、密码、登录域                                                                   | `setup` 时填写                                |
+| `server.address` / `server.port`                                 | aTrust 服务器                                                                        | `vpn.nju.edu.cn` / `443`                      |
+| `proxy.socks_port` / `proxy.http_port`                           | 本机代理端口（仅监听 127.0.0.1）                                                     | `1080` / `1081`                               |
+| `daemon.mode`                                                    | `auto`：只在校外连接；`always`：始终连接                                             | `auto`                                        |
+| `daemon.check_interval`                                          | 检查网络的间隔（秒，≥10）                                                            | `60`                                          |
+| `daemon.ruleset_interval`                                        | 更新访问策略和导出文件的间隔（秒，≥300）                                             | `1800`                                        |
+| `campus.dns_servers` / `campus.probe_name`                       | 用于判断是否在校园网的内网 DNS 和查询域名                                            | `10.12.253.4, 10.28.253.4` / `www.nju.edu.cn` |
+| `export.proxy_name` / `export.group_name`                        | 导出的 Clash/Xray 配置中的代理和策略组名称                                           | `NJUConnect` / `NJU`                          |
+| `export.group_type`                                              | Clash 策略组类型：`fallback`、`url-test`、`select`                                   | `fallback`                                    |
+| `export.health_url` / `export.health_interval`                   | Clash 策略组健康检查地址（需能通过 VPN 访问）和间隔（秒，≥30）                       | `http://lib.nju.edu.cn/` / `300`              |
+| `export.resolve_domains`                                         | 为匹配学校 IP 段而解析的域名（逗号分隔；`*` 表示全部解析，留空表示从不解析），见下文 | `nju.edu.cn`                                  |
 
 ## 与代理工具配合
 
@@ -94,16 +92,16 @@ nju-connect config set account.password       # 不写值时会提示输入（�
 
 **已经在用代理工具**（Clash、sing-box、Xray 等，需要只把南大流量交给 zju-connect）时，用 `nju-connect export` 生成对应格式的规则。规则按学校下发的访问策略精确生成（域名、端口、TCP/UDP），使用 `-o` 写入文件后会被记住，后台服务更新访问策略时会自动重新生成：
 
-| 格式 | 用途 | 示例 |
-|---|---|---|
-| `clash-verge` | Clash Verge Rev 全局扩展脚本（注入代理、`fallback` 策略组和规则） | `nju-connect export clash-verge --install`，然后在 Clash Verge 中重新加载订阅 |
-| `clash` | mihomo 规则集（rule-provider，classical） | `nju-connect export clash -o ~/.config/mihomo/ruleset/nju-vpn.yaml` |
-| `clash-config` | mihomo 配置片段：代理、策略组、规则集和规则，适合 FlClash、Mihomo Party 等其他 mihomo 客户端 | `nju-connect export clash-config`，把输出合并进配置 |
-| `sing-box` | sing-box 规则集源文件（JSON），适合 sing-box、Hiddify、GUI.for.SingBox | `nju-connect export sing-box -o ~/nju-vpn.json` |
-| `sing-box-config` | sing-box 出站和路由规则片段（引用上面的规则集；未导出时内联），需要 sing-box 1.11+ | `nju-connect export sing-box-config`，把 `outbounds`、`route.rule_set` 和 `route.rules` 合并进配置（需要有 `direct` 出站和 `route.default_domain_resolver`） |
-| `xray` | Xray/V2Ray 出站和路由规则（JSON），适合 v2rayA、Xray | `nju-connect export xray`，把 `outbounds`、`routing.rules` 和 `routing.domainStrategy` 合并进配置 |
-| `pac` | PAC 文件：南大资源走 `127.0.0.1:1081`，其余直连 | `nju-connect export pac -o ~/nju.pac`，在浏览器或系统代理中设置 `file:///home/<用户名>/nju.pac` |
-| `list` | 纯文本列表（目标、端口、协议），可自行转换为其他格式 | `nju-connect export list` |
+| 格式              | 用途                                                                                         | 示例                                                                                                                                                         |
+| ----------------- | -------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `clash-verge`     | Clash Verge Rev 全局扩展脚本（注入代理、`fallback` 策略组和规则）                            | `nju-connect export clash-verge --install`，然后在 Clash Verge 中重新加载订阅                                                                                |
+| `clash`           | mihomo 规则集（rule-provider，classical）                                                    | `nju-connect export clash -o ~/.config/mihomo/ruleset/nju-vpn.yaml`                                                                                          |
+| `clash-config`    | mihomo 配置片段：代理、策略组、规则集和规则，适合 FlClash、Mihomo Party 等其他 mihomo 客户端 | `nju-connect export clash-config`，把输出合并进配置                                                                                                          |
+| `sing-box`        | sing-box 规则集源文件（JSON），适合 sing-box、Hiddify、GUI.for.SingBox                       | `nju-connect export sing-box -o ~/nju-vpn.json`                                                                                                              |
+| `sing-box-config` | sing-box 出站和路由规则片段（引用上面的规则集；未导出时内联），需要 sing-box 1.11+           | `nju-connect export sing-box-config`，把 `outbounds`、`route.rule_set` 和 `route.rules` 合并进配置（需要有 `direct` 出站和 `route.default_domain_resolver`） |
+| `xray`            | Xray/V2Ray 出站和路由规则（JSON），适合 v2rayA、Xray                                         | `nju-connect export xray`，把 `outbounds`、`routing.rules` 和 `routing.domainStrategy` 合并进配置                                                            |
+| `pac`             | PAC 文件：南大资源走 `127.0.0.1:1081`，其余直连                                              | `nju-connect export pac -o ~/nju.pac`，在浏览器或系统代理中设置 `file:///home/<用户名>/nju.pac`                                                              |
+| `list`            | 纯文本列表（目标、端口、协议），可自行转换为其他格式                                         | `nju-connect export list`                                                                                                                                    |
 
 ```bash
 nju-connect export --list            # 查看已记住的导出文件
@@ -134,39 +132,39 @@ nju-connect export clash --refresh   # 先重新下载访问策略
 
 ## 文件位置
 
-| 路径 | 内容 |
-|---|---|
-| `~/.local/bin/zju-connect`、`~/.local/bin/nju-connect` | 程序 |
-| `~/.config/nju-connect/config.toml` | zju-connect 配置，含密码（权限 600） |
-| `~/.config/nju-connect/nju-connect.conf` | nju-connect 设置和已记住的导出文件 |
-| `~/.local/state/nju-connect/client_data.json` | 登录状态 |
-| `~/.local/state/nju-connect/resource.json` | 最近一次下载的访问策略 |
-| `~/.config/systemd/user/nju-connect.service` | 后台服务 |
+| 路径                                                   | 内容                                 |
+| ------------------------------------------------------ | ------------------------------------ |
+| `~/.local/bin/zju-connect`、`~/.local/bin/nju-connect` | 程序                                 |
+| `~/.config/nju-connect/config.toml`                    | zju-connect 配置，含密码（权限 600） |
+| `~/.config/nju-connect/nju-connect.conf`               | nju-connect 设置和已记住的导出文件   |
+| `~/.local/state/nju-connect/client_data.json`          | 登录状态                             |
+| `~/.local/state/nju-connect/resource.json`             | 最近一次下载的访问策略               |
+| `~/.config/systemd/user/nju-connect.service`           | 后台服务                             |
 
 ## 常见问题
 
 - **每次都要短信验证码**：运行 `nju-connect trust` 把本机设为授信终端。学校限制每个账号最多 3 台电脑、3 台手机；超过时会失败（错误码 75500311），需要先在其他设备上取消授信。
 - **开启代理工具的 TUN 模式后服务误判为在校内**：TUN 会把内网 DNS 查询也转发进 VPN。请在 TUN 设置中排除 10.12.253.4、10.28.253.4，或改用系统代理。
 - **提示 zju-connect 版本过旧**：访问策略下载需要 `--fetch-resource` 选项，目前只有 [Huaji-tye2007/zju-connect](https://github.com/Huaji-tye2007/zju-connect) 的版本支持。运行 `nju-connect upgrade` 安装。
-- **不使用 systemd**：把 `nju-connect service run` 加入桌面自启动即可。
+- **不想使用 systemd ?**：把 `nju-connect service run` 加入桌面自启动即可。
 
-## 开发
+## 参与开发
 
 源代码位于 [`nju_connect/`](nju_connect) 包中，只依赖标准库（Python 3.8+）：
 
-| 模块 | 内容 |
-|---|---|
-| `cli.py` | 命令行参数和各子命令入口 |
-| `configure.py` | `setup` 向导、`login` 和 `config show/get/set` |
-| `config.py` | 两个配置文件的读写和设置项定义（类型、校验、修改后的影响） |
-| `paths.py` | 文件位置，查找 zju-connect |
-| `service.py` | systemd 用户服务 |
-| `daemon.py` | 服务主循环（`service run`） |
-| `network.py` | 校园网检测、VPN 健康检查、运行中实例检测 |
-| `zju.py` | 调用 zju-connect（交互式登录、下载访问策略、获取登录方式） |
-| `policy.py` | 把访问策略解析为与工具无关的条目 |
-| `exporters.py` | 各种导出格式和已记住的导出文件 |
-| `clash.py` | Clash/mihomo 相关格式 |
+| 模块           | 内容                                                       |
+| -------------- | ---------------------------------------------------------- |
+| `cli.py`       | 命令行参数和各子命令入口                                   |
+| `configure.py` | `setup` 向导、`login` 和 `config show/get/set`             |
+| `config.py`    | 两个配置文件的读写和设置项定义（类型、校验、修改后的影响） |
+| `paths.py`     | 文件位置，查找 zju-connect                                 |
+| `service.py`   | systemd 用户服务                                           |
+| `daemon.py`    | 服务主循环（`service run`）                                |
+| `network.py`   | 校园网检测、VPN 健康检查、运行中实例检测                   |
+| `zju.py`       | 调用 zju-connect（交互式登录、下载访问策略、获取登录方式） |
+| `policy.py`    | 把访问策略解析为与工具无关的条目                           |
+| `exporters.py` | 各种导出格式和已记住的导出文件                             |
+| `clash.py`     | Clash/mihomo 相关格式                                      |
 
 - 测试：`python3 -m unittest discover -s tests -t .`
 - 直接运行源码：`python3 -m nju_connect --help`
@@ -182,3 +180,16 @@ nju-connect export clash --refresh   # 先重新下载访问策略
 ## 许可证
 
 [GPL-3.0](LICENSE)
+
+## 参与测试
+
+**极其欢迎提交issue和PR！！！**
+由于本项目当前仅为个人开发，在不同 Linux 发行版、不同桌面环境、不同代理工具下可能存在各种问题，欢迎大家提供使用反馈。目前本人使用的环境为 Ubuntu 24.04，代理工具为 Clash Verge Rev，其他环境可能存在兼容性问题。请在提交 issue 时提供以下信息：
+
+- Linux 发行版及版本号
+- 桌面环境（GNOME、KDE、XFCE 等）
+- 代理工具及版本号（Clash、sing-box、Xray 等）
+- 具体问题描述（包括命令行输出、日志、截图等）
+- 如何复现问题
+
+希望大家能积极参与使用和反馈，让这个工具更加完善和易用！
