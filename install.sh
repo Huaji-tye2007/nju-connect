@@ -57,6 +57,12 @@ if curl -fsSL --retry 3 -o "$tmp/zju-connect.zip" "$asset"; then
   fi
 elif command -v go >/dev/null; then
   warn "no prebuilt binary for linux-$arch in $VERSION, building from source"
+  # proxy.golang.org is unreachable from mainland China; use a mirror unless GOPROXY was customised
+  if [ "$(go env GOPROXY)" = "https://proxy.golang.org,direct" ] &&
+    ! curl -fsS -m 5 -o /dev/null https://proxy.golang.org/ 2>/dev/null; then
+    msg "proxy.golang.org is unreachable, downloading Go modules from goproxy.cn"
+    export GOPROXY=https://goproxy.cn,direct
+  fi
   curl -fsSL --retry 3 "https://github.com/$REPO/archive/refs/tags/$VERSION.tar.gz" | tar -xz -C "$tmp"
   (cd "$tmp"/zju-connect-* && CGO_ENABLED=0 go build -trimpath \
     -ldflags "-s -w -X main.zjuConnectVersion=$VERSION" -o "$tmp/bin/zju-connect" .)
