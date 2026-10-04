@@ -1,4 +1,4 @@
-"""The systemd user service that runs `nju-connect daemon`."""
+"""The systemd user service: the one place zju-connect runs (`nju-connect service run`)."""
 
 import os
 import shutil
@@ -10,14 +10,14 @@ from .network import require_no_instance
 from .util import die, write_atomic
 
 UNIT_TEMPLATE = """[Unit]
-Description=NJU Connect: zju-connect while off campus, plus Clash ruleset updates
+Description=NJU Connect: zju-connect (off campus in auto mode), plus access-policy updates
 After=default.target
 
 [Service]
-ExecStart={exe} daemon
+ExecStart={exe} service run
 Restart=always
 RestartSec=10
-# The daemon stops zju-connect itself on SIGTERM; anything left is killed afterwards
+# The service loop stops zju-connect itself on SIGTERM; anything left is killed afterwards
 KillMode=mixed
 TimeoutStopSec=30
 
@@ -28,9 +28,19 @@ WantedBy=default.target
 
 def systemctl(*args, check=True, quiet=False):
     if not shutil.which("systemctl"):
-        die("systemctl not found; run `nju-connect daemon` from your session's autostart instead")
+        die("systemctl not found; run `nju-connect service run` from your session's autostart instead")
     kwargs = {"capture_output": True, "text": True} if quiet else {}
     return subprocess.run(["systemctl", "--user", *args], check=check, **kwargs)
+
+
+def uses_default_config():
+    """The service reads the default config folder; a NJU_CONNECT_CONFIG_DIR override is another setup."""
+    return "NJU_CONNECT_CONFIG_DIR" not in os.environ
+
+
+def _require_default_config():
+    if not uses_default_config():
+        die("the service uses the default configuration; unset NJU_CONNECT_CONFIG_DIR to control it")
 
 
 def is_active():
@@ -39,15 +49,19 @@ def is_active():
     return systemctl("is-active", "--quiet", paths.UNIT_NAME, check=False, quiet=True).returncode == 0
 
 
+def is_enabled():
+    if not shutil.which("systemctl"):
+        return False
+    return systemctl("is-enabled", "--quiet", paths.UNIT_NAME, check=False, quiet=True).returncode == 0
+
+
 def state():
     if not shutil.which("systemctl"):
-        return "unavailable"
-    return systemctl("is-active", paths.UNIT_NAME, check=False, quiet=True).stdout.strip() or "unknown"
-
-
-def uses_default_config():
-    """The service reads the default config folder; a NJU_CONNECT_CONFIG_DIR override is another setup."""
-    return "NJU_CONNECT_CONFIG_DIR" not in os.environ
+        return "unavailable (no systemd)"
+    if not paths.UNIT_FILE.exists():
+        return "not set up"
+    active = systemctl("is-active", paths.UNIT_NAME, check=False, quiet=True).stdout.strip() or "unknown"
+    return f"{active}, {'starts automatically' if is_enabled() else 'no autostart'}"
 
 
 def restart_if_active():
@@ -58,25 +72,63 @@ def restart_if_active():
     return True
 
 
-def install(force=False):
+def _write_unit():
     exe = paths.installed_path()
-    if not paths.CLIENT_DATA.exists():
-        die("log in once first with `nju-connect login` (the service cannot enter SMS codes)")
-    require_no_instance(load_config(), force, ignore_service=True)
     write_atomic(paths.UNIT_FILE, UNIT_TEMPLATE.format(exe=exe), 0o644)
     systemctl("daemon-reload")
-    systemctl("enable", "--now", paths.UNIT_NAME)
+
+
+def _require_session():
+    if not paths.CLIENT_DATA.exists():
+        die("log in once first with `nju-connect login` (the service cannot enter SMS codes)")
+
+
+def start(force=False):
+    _require_default_config()
+    _require_session()
+    if is_active():
+        print(f"{paths.UNIT_NAME} is already running")
+        return
+    require_no_instance(load_config(), force)
+    _write_unit()
+    systemctl("start", paths.UNIT_NAME)
+    print(f"Started {paths.UNIT_NAME} (see `nju-connect service status`)")
+
+
+def stop():
+    _require_default_config()
+    if not is_active():
+        print(f"{paths.UNIT_NAME} is not running")
+        return
+    systemctl("stop", paths.UNIT_NAME)
+    print(f"Stopped {paths.UNIT_NAME}")
+
+
+def restart():
+    _require_default_config()
+    _require_session()
+    _write_unit()
     systemctl("restart", paths.UNIT_NAME)
-    print(f"Installed and started {paths.UNIT_FILE}")
-    print("Follow it with: nju-connect service logs")
+    print(f"Restarted {paths.UNIT_NAME}")
 
 
-def uninstall():
+def enable(force=False):
+    _require_default_config()
+    _require_session()
+    require_no_instance(load_config(), force, ignore_service=True)
+    _write_unit()
+    systemctl("enable", paths.UNIT_NAME)
+    systemctl("restart", paths.UNIT_NAME)
+    print(f"{paths.UNIT_NAME} is running and starts automatically when you log in")
+
+
+def disable():
+    _require_default_config()
     systemctl("disable", "--now", paths.UNIT_NAME, check=False)
     if paths.UNIT_FILE.exists():
         paths.UNIT_FILE.unlink()
     systemctl("daemon-reload")
-    print(f"Removed {paths.UNIT_FILE}")
+    print(f"Stopped {paths.UNIT_NAME} and removed it")
 
 
 def logs():

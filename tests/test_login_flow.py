@@ -6,7 +6,7 @@ import unittest
 from pathlib import Path
 from unittest import mock
 
-from nju_connect import config, connection, daemon, paths, zju
+from nju_connect import config, daemon, paths, zju
 
 SMS_FAILURE = """#!/bin/sh
 echo "Perform GET /passport/v1/auth/sms"
@@ -51,7 +51,8 @@ class LoginFlowTest(unittest.TestCase):
         patches = [mock.patch.object(daemon, "on_campus", return_value=False),
                    mock.patch.object(daemon, "port_in_use", return_value=False),
                    mock.patch.object(daemon, "vpn_healthy", return_value=False),
-                   mock.patch.object(daemon, "update_ruleset"),
+                   mock.patch.object(daemon, "update_policy", return_value=([], {})),
+                   mock.patch.object(daemon, "refresh_exports", return_value=0),
                    mock.patch.object(daemon.paths, "zju_connect_binary", return_value=binary)]
         for p in patches:
             p.start()
@@ -91,17 +92,14 @@ class LoginFlowTest(unittest.TestCase):
         self.assertLess(time.monotonic() - started, 15)   # stopped, not waiting for `sleep 30`
         self.assertTrue(paths.CLIENT_DATA.exists())
 
-    def test_background_connect_reports_expired_session(self):
+    def test_always_mode_skips_the_campus_probe(self):
         paths.CLIENT_DATA.write_text("{}")
-        binary = fake_zju(SMS_FAILURE)
-        with mock.patch.object(connection.paths, "zju_connect_binary", return_value=binary), \
-                mock.patch.object(connection, "require_no_instance"), \
-                mock.patch.object(connection, "service_managed", return_value=False), \
-                mock.patch("builtins.print"), \
-                mock.patch.object(connection, "die", side_effect=SystemExit) as die, \
-                self.assertRaises(SystemExit):
-            connection.connect()
-        self.assertIn("nju-connect login", die.call_args.args[0])
+        s = self.supervisor(fake_zju(LOGIN_OK))
+        s.always = True
+        with mock.patch.object(daemon, "on_campus", side_effect=AssertionError("probed")):
+            s.tick()
+        self.assertIsNotNone(s.proc)
+        s.stop("test")
 
 
 if __name__ == "__main__":

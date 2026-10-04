@@ -3,26 +3,23 @@
 import getpass
 import os
 import shutil
-from pathlib import Path
 
 from . import paths, service
-from .clash import install_clash_script, refresh_installed_script
-from .config import (CLASH, DEFAULT_DOMAIN, DEFAULT_HTTP_PORT, DEFAULT_SERVER, DEFAULT_SOCKS_PORT,
+from .config import (DEFAULT_DOMAIN, DEFAULT_HTTP_PORT, DEFAULT_SERVER, DEFAULT_SOCKS_PORT, EXPORTS,
                      OPTIONS, RESTART, bind_port, load_config, load_settings, option, read_toml,
-                     save_settings, set_options, write_config)
+                     save_settings, set_options, socks_address, write_config)
+from .exporters import refresh_exports
 from .network import port_in_use, require_no_instance
-from .ruleset import update_ruleset
 from .util import ask, ask_yes, die
 from .zju import auth_domains, interactive_login
 
 
 def apply_effects(effects):
-    """Regenerate the Clash script and/or restart the service after a change."""
+    """Regenerate remembered exports and/or restart the service after a change."""
     if not effects:
         return
-    config, settings = load_config(), load_settings()
-    if CLASH in effects and not refresh_installed_script(config, settings):
-        print("Run `nju-connect clash-script --install` (or --format yaml) to update your Clash config")
+    if EXPORTS in effects and paths.RESOURCE.exists():
+        refresh_exports()
     if RESTART in effects and service.restart_if_active():
         print(f"Restarted {paths.UNIT_NAME} to apply the change")
 
@@ -142,78 +139,53 @@ def login():
 
 
 def setup(server=None, advanced=False):
-    """First-run (or re-run) wizard: config, first login, ruleset, Clash script, service."""
+    """First-run (or re-run) wizard: account and ports, first login, service."""
     existing = read_toml(paths.CONFIG_TOML) if paths.CONFIG_TOML.exists() else {}
     effects = set()
     if not existing or ask_yes(f"{paths.CONFIG_TOML} exists. Reconfigure username/password/ports?"):
         write_config(ask_basic(existing, server))
         print(f"Wrote {paths.CONFIG_TOML} (mode 600)")
         if existing:
-            effects |= {RESTART, CLASH}
+            effects |= {RESTART, EXPORTS}
 
     paths.STATE_DIR.mkdir(parents=True, exist_ok=True)
     os.chmod(paths.STATE_DIR, 0o700)
-    settings = load_settings()
-    if not settings["ruleset"]["output"]:
-        output, provider_path, script = paths.detect_clash()
-        settings["ruleset"]["output"] = output
-        settings["ruleset"]["provider_path"] = provider_path
-        settings["clash"]["script"] = script
-    save_settings(settings)
-    print(f"Wrote {paths.SETTINGS_FILE}")
+    save_settings(load_settings())
     if advanced:
         effects |= ask_advanced()
 
-    todo = []
     logged_in = paths.CLIENT_DATA.exists()
     if not logged_in:
         print("\nFirst login: zju-connect connects once so you can enter the SMS code; "
-              "the saved session lets later logins (and the background service) skip it.")
+              "the saved session lets the background service connect without it.")
         if ask_yes("Log in now?", default=True):
             logged_in = login()
-        if not logged_in:
-            todo.append("nju-connect login               # log in once (SMS code)")
 
-    if logged_in:
-        print("\nGenerating the Clash ruleset")
-        try:
-            update_ruleset()
-        except Exception as e:
-            print(f"  failed: {e}")
-            todo.append("nju-connect ruleset             # generate the Clash ruleset")
-
-    config, settings = load_config(), load_settings()
-    script = settings["clash"]["script"]
-    if script and not Path(settings["ruleset"]["output"]).exists():
-        todo.append("nju-connect clash-script --install   # after generating the ruleset")
-    elif script:
-        if refresh_installed_script(config, settings):
-            effects.discard(CLASH)
-        elif ask_yes(f"Install the Clash Verge Rev global script ({script})?", default=True):
-            install_clash_script(config, settings)
-            effects.discard(CLASH)
-        else:
-            todo.append("nju-connect clash-script --install   # Clash Verge Rev global script")
-    elif not script:
-        todo.append("nju-connect clash-script --format yaml   # mihomo config snippet to merge")
-
-    if paths.UNIT_FILE.exists():
+    todo = []
+    if not logged_in:
+        todo.append("nju-connect login                # log in once (SMS code)")
+        todo.append("nju-connect service enable       # then connect automatically")
+    elif paths.UNIT_FILE.exists() and service.uses_default_config():
         apply_effects(effects)
-    elif logged_in and shutil.which("systemctl"):
-        if ask_yes("Connect automatically whenever you are off campus (systemd user service)?",
-                   default=True):
-            service.install()
+    elif shutil.which("systemctl") and service.uses_default_config():
+        if ask_yes("Connect automatically whenever you log in (systemd user service)?", default=True):
+            service.enable()
         else:
-            todo.append("nju-connect service install     # connect automatically off campus")
-    elif not logged_in:
-        todo.append("nju-connect service install     # after logging in")
+            todo.append("nju-connect service start        # connect now (or `service enable` for autostart)")
+    else:
+        todo.append("nju-connect service run          # keep the VPN up (add it to your autostart)")
 
+    config = load_config()
+    host, socks = socks_address(config)
+    http = bind_port(config.get("http_bind", ""), DEFAULT_HTTP_PORT)
     print("\nSetup finished." if not todo else "\nSetup finished. Still to do:")
     for line in todo:
         print(f"  {line}")
-    print("\nUseful commands: `nju-connect check`, `nju-connect config show`, `nju-connect service logs`")
-    if not advanced:
-        print("Daemon, Clash and campus-detection settings: `nju-connect setup --advanced`")
+    print(f"\nWhile connected, zju-connect offers a SOCKS5 proxy on {host}:{socks} and an HTTP proxy on "
+          f"{host}:{http};\nthey send NJU resources through the VPN and everything else directly.")
+    print("To use them from Clash, sing-box, Xray or a PAC file, see `nju-connect export --help`.")
+    print("Other commands: `nju-connect service status`, `nju-connect config show`, "
+          "`nju-connect setup --advanced`")
 
 
 def display(opt, value):

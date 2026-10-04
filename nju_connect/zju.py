@@ -1,4 +1,4 @@
-"""Running zju-connect for one-shot tasks: feature check, resource download, login methods."""
+"""Running zju-connect for one-shot tasks: feature check, policy download, login."""
 
 import json
 import re
@@ -9,7 +9,6 @@ import time
 from pathlib import Path
 
 from . import paths
-from .util import write_atomic
 
 # zju-connect output meaning the login is waiting for input (an SMS code)
 NEEDS_INPUT = re.compile(r"Please enter|challenge: EOF|verification code", re.I)
@@ -34,8 +33,8 @@ def require_fetch_resource():
     _fetch_resource_checked = True
 
 
-def fetch_resource():
-    """Download the resource with the saved session; returns the raw JSON."""
+def download_resource():
+    """Download the access policy with the saved session; returns the raw JSON (not saved)."""
     require_fetch_resource()
     with tempfile.TemporaryDirectory() as tmp:
         out = Path(tmp) / "resource.json"
@@ -46,8 +45,7 @@ def fetch_resource():
             raise RuntimeError("zju-connect --fetch-resource failed:\n" + proc.stdout + proc.stderr
                                + "\nIf the session expired, log in again with `nju-connect connect`.")
         data = out.read_bytes()
-    json.loads(data)  # must be valid JSON before it replaces the old copy
-    write_atomic(paths.RESOURCE, data, 0o600)
+    json.loads(data)  # must be valid JSON before anyone uses it
     return data
 
 

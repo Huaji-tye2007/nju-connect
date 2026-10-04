@@ -1,4 +1,5 @@
-"""The background supervisor: zju-connect only while off campus, plus ruleset updates."""
+"""The service loop: keeps zju-connect running (only off campus in auto mode) and the
+access policy and remembered exports up to date."""
 
 import os
 import signal
@@ -10,7 +11,8 @@ import time
 from . import paths
 from .config import load_config, load_settings, socks_address
 from .network import instance_problems, on_campus, port_in_use, vpn_healthy
-from .ruleset import update_ruleset
+from .exporters import refresh_exports
+from .policy import update_policy
 from .util import log, notify
 from .zju import NEEDS_INPUT, require_fetch_resource, session_mtime
 
@@ -26,6 +28,7 @@ class Supervisor:
         self.config = config
         self.socks = socks_address(config)
         self.update_interval = int(settings["daemon"]["ruleset_interval"])
+        self.always = settings["daemon"]["mode"] == "always"
         self.proc = None
         self.started_at = 0.0
         self.failures = 0
@@ -52,12 +55,13 @@ class Supervisor:
 
     def pump(self, proc):
         """Forward zju-connect's output to the journal and spot SMS prompts."""
-        for raw in proc.stdout:
-            line = raw.decode(errors="replace")
-            sys.stdout.write(line)
-            sys.stdout.flush()
-            if NEEDS_INPUT.search(line):
-                self.needs_input = True
+        with proc.stdout:
+            for raw in proc.stdout:
+                line = raw.decode(errors="replace")
+                sys.stdout.write(line)
+                sys.stdout.flush()
+                if NEEDS_INPUT.search(line):
+                    self.needs_input = True
 
     def require_login(self, why):
         """Stop retrying (each try may send an SMS) until the user logs in again."""
@@ -116,15 +120,16 @@ class Supervisor:
             self.notified = True
             notify("zju-connect keeps failing to connect; see `nju-connect service logs`.")
 
-    def update_ruleset(self, now):
+    def refresh_policy(self, now):
         if now < self.next_update:
             return
         self.next_update = now + self.update_interval
-        log("Updating Clash ruleset")
         try:
-            update_ruleset()
+            entries, skipped = update_policy()
+            changed = refresh_exports(entries, skipped, quiet=True)
+            log(f"Access policy updated ({len(entries)} entries, {changed} export file(s) changed)")
         except Exception as e:
-            log(f"Ruleset update failed, keeping the old rules: {e}")
+            log(f"Access policy update failed, keeping the old one: {e}")
             self.next_update = now + 5 * 60
 
     def healthy(self):
@@ -134,10 +139,10 @@ class Supervisor:
         now = time.monotonic()
         self.reap(now)
 
-        campus = on_campus(self.settings)
+        campus = False if self.always else on_campus(self.settings)
         if campus != self.campus:
-            log({True: "Network: on campus", False: "Network: off campus",
-                 None: "Network: offline"}[campus])
+            log("Mode: always connected" if self.always else
+                {True: "Network: on campus", False: "Network: off campus", None: "Network: offline"}[campus])
             self.campus = campus
         if campus is None:
             return
@@ -155,7 +160,7 @@ class Supervisor:
                         "not starting a second zju-connect")
                 self.healthy()
                 if vpn_healthy(self.settings, self.socks):
-                    self.update_ruleset(now)
+                    self.refresh_policy(now)
                 return
             self.warned_external = False
             if self.login_pending():
@@ -169,7 +174,7 @@ class Supervisor:
         if vpn_healthy(self.settings, self.socks):
             self.health_failures = 0
             self.healthy()
-            self.update_ruleset(now)
+            self.refresh_policy(now)
             return
         self.health_failures += 1
         log(f"VPN health check failed ({self.health_failures}/{self.HEALTH_FAILURES})")

@@ -118,7 +118,7 @@ esac
 
 # Restart the service so it picks up the new binaries
 unit="${XDG_CONFIG_HOME:-$HOME/.config}/systemd/user/nju-connect.service"
-if [ -f "$unit" ] && grep -q "$PREFIX/nju-connect daemon" "$unit" &&
+if [ -f "$unit" ] && grep -q "$PREFIX/nju-connect " "$unit" &&
   systemctl --user is-active --quiet nju-connect.service 2>/dev/null; then
   systemctl --user restart nju-connect.service && msg "Restarted nju-connect.service"
 fi
@@ -132,6 +132,6 @@ config="${NJU_CONNECT_CONFIG_DIR:-${XDG_CONFIG_HOME:-$HOME/.config}/nju-connect}
 if [ -f "$config" ]; then
   msg "Keeping your existing configuration ($config); run \`nju-connect setup\` to change it."
 else
-  # setup walks through the account, first login (SMS code), ruleset, Clash script and service
+  # setup walks through the account, the first login (SMS code) and the service
   "$PREFIX/nju-connect" setup </dev/tty
 fi

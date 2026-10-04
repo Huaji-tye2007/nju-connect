@@ -106,10 +106,20 @@ def running_instances(exclude_pid=None):
     return found
 
 
+def uses_config(pid):
+    """True if the process was started with nju-connect's config.toml."""
+    try:
+        cmdline = (Path("/proc") / str(pid) / "cmdline").read_bytes().split(b"\0")
+    except OSError:
+        return False
+    return str(paths.CONFIG_TOML).encode() in cmdline
+
+
 def instance_problems(config, ignore_service=False):
     """Human-readable reasons why starting zju-connect now would conflict."""
     problems = []
-    instances = running_instances()
+    # zju-connect processes using this configuration; others only conflict through their ports
+    instances = [i for i in running_instances() if uses_config(i[0])]
     if ignore_service and any(in_service for *_, in_service in instances):
         # the service's own zju-connect holds the ports; only report the others
         return [p for p in instance_problems(config) if "nju-connect service" not in p
