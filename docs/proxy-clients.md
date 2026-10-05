@@ -12,7 +12,12 @@ zju-connect 自己会按学校的访问策略分流：南大资源走 VPN，其�
 1. **不用代理客户端**：把浏览器或应用的代理直接设为上面的地址（见[第一节](#一不使用代理客户端)）。
 2. **已经在用代理客户端**（Clash、sing-box、Xray、v2rayN 等）：把 zju-connect 作为一个出站/节点加入客户端，再用 `nju-connect export` 生成的规则只把南大流量交给它，其他流量照常走你原来的规则。
 
-`nju-connect export` 用 `-o` 写入文件后会被记住，后台服务每 30 分钟更新访问策略时会自动重新生成；`nju-connect export --list` 查看，`--forget 格式` 取消（文件保留）。
+`nju-connect export` 有两种用法：
+
+- **`--install`**（Clash Verge Rev、原生 mihomo、sing-box、Xray）：把规则放进客户端会自己重新读取的文件，或直接合并进它的配置，学校策略变化后**自动生效**；nju-connect 无法写入的配置，会打印一次性的合并提示。
+- **不加 `--install`**：生成内容全部内联的文件或片段（例如 FlClash、Clash Party 用的覆写脚本、v2rayN 的规则文件），学校策略变化后文件会自动重新生成，但客户端需要**重新导入**。
+
+导出和安装都会被记住，后台服务每 30 分钟更新访问策略时自动重新生成，同一格式可以有多个导出（例如两个不同位置的脚本）。`nju-connect export --list` 列出每个导出维护的所有文件及其更新时间，`nju-connect export --forget 格式|路径|名称` 取消（文件保留）。每个格式的用法见 `nju-connect export 格式 -h`。
 
 **在校内**：`auto` 模式在校内会停止 zju-connect（校内不需要 VPN），此时 nju-connect 自己在同样的两个端口上提供一个**直连代理**：收到的请求直接从本机连出，域名用校园网 DNS 解析。所以无论你用哪种客户端、规则把南大流量交给 `127.0.0.1:1080`，在校内也能正常打开南大网站。离开校园网时，服务先关闭直连代理，再启动 zju-connect。不需要时可以 `nju-connect config set daemon.campus_proxy off`；`nju-connect service status` 会显示当前是 VPN 还是直连。
 
@@ -21,7 +26,7 @@ zju-connect 自己会按学校的访问策略分流：南大资源走 VPN，其�
 | 客户端                                                            | 做法                                                | 需要手动做的事                                                        | 学校策略变化后               | 测试情况                                  |
 | ----------------------------------------------------------------- | --------------------------------------------------- | --------------------------------------------------------------------- | ---------------------------- | ----------------------------------------- |
 | [Clash Verge Rev](#clash-verge-rev)                               | `export clash-verge --install` 写入全局扩展脚本     | 无（按提示重启一次 Clash Verge）                                      | 自动，立即生效               | 已实测（新的文件结构待在界面中确认）      |
-| [FlClash](#flclash)                                               | 导入 `--inline` 导出的覆写脚本                      | 导入                                                                  | 重新导入脚本                 | 内核已实测，界面步骤已实测                |
+| [FlClash](#flclash)                                               | 导入 `export mihomo-script` 导出的覆写脚本          | 导入                                                                  | 重新导入脚本                 | 内核已实测，界面步骤已实测                |
 | [Clash Party 等](#clash-party--mihomo-party-等其他-mihomo-客户端) | 导入覆写脚本（其他客户端：脚本或 YAML 片段）        | 导入脚本并全局启用                                                    | 重新导入                     | Clash Party 已实测；其他客户端未实测      |
 | [原生 mihomo](#原生-mihomo--自己维护的-configyaml)                | `export clash-config --install` 写入规则和代理文件  | 把打印的片段合并进 `config.yaml`（一次）                              | 自动，立即生效（包括改端口） | 已实测（mihomo 1.19）                     |
 | [sing-box](#三sing-box-内核的客户端sing-box-111)                  | `export sing-box-config --install` 合并进配置并重载 | 无（sing-box 由 systemd 系统服务运行时需手动重载）                    | 自动，立即生效               | 已实测（sing-box 1.14）；图形客户端未实测 |
@@ -66,7 +71,7 @@ PAC 只把南大资源交给 `127.0.0.1:1081`，其余直连；zju-connect 停�
 - 策略组 `NJU`：`fallback` 类型，先用 NJUConnect，每 5 分钟通过它访问 `http://lib.nju.edu.cn/` 检测；VPN 不可用（例如服务停止）时自动改为直连
 - 两个规则集：`nju-direct`（VPN 服务器和节点，必须直连）和 `nju-vpn`（南大资源），以及放在最前面的两条规则 `RULE-SET,nju-direct,DIRECT`、`RULE-SET,nju-vpn,NJU`
 
-所有 mihomo 客户端得到的结构都相同（名称、策略组和规则一致），区别只在代理和规则集放在哪里：不加 `--install`（FlClash、Clash Party 用的 `--inline` 脚本，以及打印的片段）时直接写在脚本或片段里（`type: inline`），学校策略变化后需要重新导入；用 `--install` 安装时（Clash Verge Rev、原生 mihomo）放在 nju-connect 维护的文件里：
+所有 mihomo 客户端得到的结构都相同（名称、策略组和规则一致），区别只在代理和规则集放在哪里：不加 `--install`（FlClash、Clash Party 用的 `mihomo-script` 覆写脚本，以及打印的 `clash-config` 片段）时直接写在脚本或片段里（`type: inline`），学校策略变化后需要重新导入；用 `--install` 安装时（Clash Verge Rev、原生 mihomo）放在 nju-connect 维护的文件里：
 
 | 文件（相对 mihomo 的主目录） | 内容                                         |
 | ---------------------------- | -------------------------------------------- |
@@ -97,12 +102,12 @@ PAC 只把南大资源交给 `127.0.0.1:1081`，其余直连；zju-connect 停�
 
 ### FlClash
 
-**内核和 FlClash 界面步骤均已实测。**（这一版的脚本改为与 Clash Verge Rev 相同的结构，代理放在 `type: inline` 的 proxy-provider 中，已在 mihomo 1.19 内核上实测，还需要在 FlClash 中再确认一次。）FlClash 0.8.85 起支持与 Clash Verge Rev 相同的 `main(config)` 覆写脚本。FlClash 读不到 Clash Verge 目录中的规则集文件，因此导出时把规则直接写进脚本：
+**内核和 FlClash 界面步骤均已实测。**（这一版的脚本改为与 Clash Verge Rev 相同的结构，代理放在 `type: inline` 的 proxy-provider 中，已在 mihomo 1.19 内核上实测，还需要在 FlClash 中再确认一次。）FlClash 0.8.85 起支持 `main(config)` 覆写脚本。FlClash 读不到 nju-connect 维护的文件，所以用 `mihomo-script` 格式，把规则直接写进脚本：
 
 1. 导出脚本：
 
    ```bash
-   nju-connect export clash-verge --inline -o ~/nju-flclash.js
+   nju-connect export mihomo-script -o ~/nju-flclash.js
    ```
 
 2. 在 FlClash 中打开“工具” → “进阶设置” → “脚本”，在右上角“添加”中选择“从文件中导入”，选择 `~/nju-flclash.js` 进行导入。
@@ -120,7 +125,7 @@ PAC 只把南大资源交给 `127.0.0.1:1081`，其余直连；zju-connect 停�
 1. 导出脚本：
 
    ```bash
-   nju-connect export clash-verge --inline -o ~/nju-clash.js
+   nju-connect export mihomo-script -o ~/nju-clash.js
    ```
 
 2. 点击左侧的“覆写”，再点击右上角的“+” → “打开”，选择 `~/nju-clash.js`。
@@ -131,11 +136,11 @@ PAC 只把南大资源交给 `127.0.0.1:1081`，其余直连；zju-connect 停�
 
 **其他 mihomo 客户端**（Clash Nyanpasu 等，未实测）：
 
-- 如果客户端支持 JavaScript 覆写脚本（`function main(config) { … return config }`），做法同上：把 `nju-connect export clash-verge --inline -o ~/nju-clash.js` 导出的内容导入或粘贴为一个覆写脚本并启用。
+- 如果客户端支持 JavaScript 覆写脚本（`function main(config) { … return config }`），做法同上：把 `nju-connect export mihomo-script -o ~/nju-clash.js` 导出的内容导入或粘贴为一个覆写脚本并启用。
 - 如果只支持 YAML 合并/覆写，导出配置片段：
 
   ```bash
-  nju-connect export clash-config --inline -o ~/nju-clash.yaml
+  nju-connect export clash-config -o ~/nju-clash.yaml
   ```
 
   把其中的 `proxies`、`proxy-groups`、`rule-providers` 手动加入你的配置，`rules` 中的几条放在你的规则**最前面**。
@@ -240,11 +245,16 @@ nju-connect 不会修改你的 `config.yaml`（Python 标准库无法可靠地�
 
 **学校策略变化后**：后台服务只更新 `nju-connect/` 中的规则集，sing-box 会监视它们的变化，立即生效，不需要重载。修改 SOCKS 端口或代理名称时，后台服务会重新合并配置并重载 sing-box。
 
-**配置文件属于 root**（例如发行版软件包的 `/etc/sing-box/config.json`）时 nju-connect 无法写入，做法同下文 Xray 一节：改用你自己目录下的配置和 systemd 用户服务运行 sing-box。
+**配置文件属于 root**（例如发行版软件包的 `/etc/sing-box/config.json`，以系统服务运行）时 nju-connect 无法写入，也不会使用 sudo。这时 `--install` 不修改配置文件，而是：
+
+1. 把三个规则集写到 `~/.local/share/nju-connect/sing-box/`（以 root 运行的 sing-box 能读取）；
+2. 打印需要合并的三段内容：① 加到 `outbounds` 末尾的 `NJUConnect` 出站，② 加到 `route.rule_set` 的三个规则集，③ 放在 `route.rules` 最前面的四条规则。用 sudo 编辑配置文件，按提示合并一次，`sing-box check -c 配置文件` 检查后重载 sing-box。
+
+之后学校策略变化时，后台服务只更新这三个规则集，sing-box 自己重新读取，**同样不需要再做任何事**。修改 SOCKS 端口或代理名称后，后台服务会弹出通知，重新运行命令并更新 ① 和 ③ 即可。**已实测**（sing-box 1.14：按提示合并后 `sing-box check` 通过，南大网站走 `NJUConnect`）。
 
 **移除**：运行 `nju-connect export --forget sing-box-config`，再用备份文件恢复，或删除引用 `nju-*` 规则集的规则、这三个规则集和 `NJUConnect` 出站。
 
-**只想手动合并**：`nju-connect export sing-box -o 文件` 写出规则集，`nju-connect export sing-box-config`（不加 `--install`）打印需要合并的出站和路由规则（VPN 节点直连规则写在其中，学校策略变化后需要重新合并）。
+**只想手动合并**（例如图形客户端或另一台机器上的 sing-box）：`nju-connect export sing-box-config`（不加 `--install`）打印内容全部内联的出站和路由规则，学校策略变化后需要重新合并。只需要规则集文件时，用 `nju-connect export sing-box -o 文件`。
 
 **图形客户端**（GUI.for.SingBox、NekoBox、Hiddify 等，未实测）：在其“自定义出站/路由规则/规则集”设置中按上面的方式添加；如果客户端只能把规则指向它自己的节点，可以先把 `socks5 127.0.0.1:1080` 添加为一个节点，再让南大规则指向该节点。
 
@@ -272,7 +282,7 @@ Xray 按“入站 → 路由 → 出站”处理每个连接：路由规则从�
    - 如果能找到 `xray` 命令（`PATH` 中，或环境变量 `NJU_CONNECT_XRAY`），先用 `xray run -test` 检查合并结果，检查失败则不修改原文件
    - 如果 Xray 由 systemd **用户**服务运行，询问是否重启这个服务；如果是系统服务，提示你运行 `sudo systemctl restart …`
 
-2. 如果 Xray 是官方安装脚本装的系统服务，配置文件 `/usr/local/etc/xray/config.json` 属于 root，nju-connect 无法写入。可以改用用户服务运行 Xray：把配置复制到 `~/.config/xray/config.json`，`sudo systemctl disable --now xray`，再创建 `~/.config/systemd/user/xray.service`：
+2. 如果 Xray 是官方安装脚本装的系统服务，配置文件 `/usr/local/etc/xray/config.json` 属于 root，nju-connect 无法写入，`--install` 只会打印需要合并的出站和规则。Xray 没有可以引用的规则文件，所以这种情况下学校策略变化后需要重新运行命令、重新合并，nju-connect 不会记住它。更好的做法是改用用户服务运行 Xray：把配置复制到 `~/.config/xray/config.json`，`sudo systemctl disable --now xray`，再创建 `~/.config/systemd/user/xray.service`：
 
    ```ini
    [Unit]
@@ -299,7 +309,7 @@ Xray 按“入站 → 路由 → 出站”处理每个连接：路由规则从�
 
 ### v2rayN
 
-v2rayN 是图形界面：它把你添加的节点和“路由设置”中的规则保存在自己的数据库里，每次启动或切换节点时按**活动节点的内核类型**生成内核配置（`binConfigs/config.json`）并运行内核。因此**不能直接修改它生成的配置文件**（会被覆盖），要通过它的界面添加：
+v2rayN 是图形界面：它把你添加的节点和“路由设置”中的规则保存在自己的数据库里，每次启动或切换节点时按**活动节点的内核类型**生成内核配置（`binConfigs/config.json`）并运行内核。因此**不能直接修改它生成的配置文件**（会被覆盖），要通过它的界面手动添加：
 
 - 一个 SOCKS 节点，别名为 `NJUConnect`，指向 zju-connect
 - 当前路由规则集中的南大规则，出站写节点别名 `NJUConnect`（v2rayN 7.x 起，规则的出站可以是任意节点的别名）
