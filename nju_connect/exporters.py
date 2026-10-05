@@ -31,11 +31,11 @@ def render_clash(entries, skipped, config, settings, exports):
 
 
 def render_clash_config(entries, skipped, config, settings, exports):
-    return clash.clash_config(clash.clash_parts(entries, config, settings, exports.get("clash")))
+    return clash.clash_config(clash.clash_parts(entries, config, settings))
 
 
 def render_clash_verge(entries, skipped, config, settings, exports):
-    return clash.clash_verge_script(clash.clash_parts(entries, config, settings, exports.get("clash")))
+    return clash.clash_verge_script(clash.clash_parts(entries, config, settings))
 
 
 def render_sing_box(entries, skipped, config, settings, exports):
@@ -297,10 +297,10 @@ def v2rayn_steps(output):
     return "\n".join(lines)
 
 
-def apply_verge_script(interactive=True):
+def apply_verge_script(interactive=True, pending=False):
     """Clash Verge Rev only runs the global script when it rebuilds its configuration,
     which it does on start or when you change something in its GUI, not when the file
-    changes. Offer to restart it."""
+    changes. Offer to restart it (pending: the script is unchanged but not loaded yet)."""
     hint = "restart Clash Verge Rev (or open the global script in its GUI and save it) to apply it"
     if not interactive:
         notify(f"The nju-connect script for Clash Verge Rev changed; {hint}")
@@ -308,6 +308,8 @@ def apply_verge_script(interactive=True):
     if not clash.verge_processes():
         print("Clash Verge Rev will load the script the next time it starts")
         return
+    if pending:
+        print("Clash Verge Rev has not loaded this script yet (its rules page still shows the old rules).")
     if not sys.stdin.isatty():
         print(f"To load the new script, {hint}")
     elif ask_yes("Clash Verge Rev loads the script only when it rebuilds its configuration. "
@@ -362,13 +364,16 @@ class VergeInstaller(Installer):
 
     def apply(self, target, entries, skipped, interactive):
         files = _provider_files(paths.VERGE_DIR, entries, skipped)
-        script = clash.clash_verge_script(clash.installed_parts(load_settings()))
-        changed = write_file(target, script)
+        parts = clash.installed_parts(load_settings())
+        changed = write_file(target, clash.clash_verge_script(parts))
         if interactive:
             print(f"{'Wrote' if changed else 'Unchanged:'} {target}, and its rule and proxy files in "
                   f"{paths.VERGE_DIR}; they will be kept up to date")
         if changed:
             apply_verge_script(interactive)
+        elif interactive and clash.verge_loaded(parts["rules"]) is False:
+            # e.g. the service rewrote the script, and Clash Verge has not rebuilt since
+            apply_verge_script(interactive, pending=True)
         return files or changed
 
 

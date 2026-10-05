@@ -68,23 +68,6 @@ def rule_provider(entries, header, resolve=DEFAULT_RESOLVE):
     return "\n".join(lines) + "\n"
 
 
-def provider_for(entries, clash_path, resolve=DEFAULT_RESOLVE):
-    """The `nju-vpn` rule-provider: a file mihomo can read, or the rules inline."""
-    if clash_path:
-        path = Path(clash_path).resolve()
-        for home in (paths.VERGE_DIR, paths.MIHOMO_DIR):
-            try:
-                relative = path.relative_to(home.resolve())
-            except ValueError:
-                continue
-            # interval: mihomo re-reads the file this often, so ruleset updates apply without
-            # Clash Verge having to rebuild its configuration
-            return {"type": "file", "behavior": "classical", "format": "yaml", "path": f"./{relative}",
-                    "interval": PROVIDER_INTERVAL}
-    # mihomo only reads provider files inside its home directory
-    return {"type": "inline", "behavior": "classical", "payload": clash_rules(entries, resolve)}
-
-
 PROXY_PROVIDER = "nju-connect"
 # files an installed export keeps up to date, relative to mihomo's home directory
 PROVIDER_FILES = {"nju-vpn": "ruleset/nju-vpn.yaml", "nju-direct": "ruleset/nju-direct.yaml",
@@ -95,13 +78,6 @@ def direct_rules(entries, config):
     """zju-connect's own connections to the VPN server and nodes, kept out of the proxy."""
     return ([f"DOMAIN,{config.get('server_address', DEFAULT_SERVER)}"]
             + [f"IP-CIDR,{n.value},no-resolve" for n in nodes(entries)])
-
-
-def with_target(rule, target):
-    """A provider rule as a config rule: the target goes before a trailing no-resolve."""
-    if rule.endswith(",no-resolve"):
-        return f"{rule[:-len(',no-resolve')]},{target},no-resolve"
-    return f"{rule},{target}"
 
 
 def _group(settings, members):
@@ -121,16 +97,29 @@ def direct_proxy_name(settings):
     return settings["export"]["proxy_name"] + "-DIRECT"
 
 
-def clash_parts(entries, config, settings, clash_path=None):
-    """Self-contained additions: the proxy, a group and the rules (inline unless clash_path
-    is a ruleset file mihomo can read). Anything that changes needs them merged again."""
-    proxy = _proxy(config, settings)
-    group = _group(settings, {"proxies": [proxy["name"], "DIRECT"]})
-    rules = [with_target(rule, "DIRECT") for rule in direct_rules(entries, config)]
-    rules.append(f"RULE-SET,nju-vpn,{group['name']}")
-    return {"proxies": [proxy], "proxy-groups": [group],
-            "rule-providers": {"nju-vpn": provider_for(entries, clash_path, resolve_domains(settings))},
-            "rules": rules}
+def _parts(settings, proxies, rule_providers):
+    """The additions for every mihomo client: a fallback group over the nju-connect proxy
+    provider, the nju-direct and nju-vpn rule sets, and the two rules that use them."""
+    # the direct member lives in the provider too: mihomo puts a group's `proxies` before its
+    # `use` providers, and the fallback group must try zju-connect first
+    group = _group(settings, {"use": [PROXY_PROVIDER]})
+    return {"proxy-providers": {PROXY_PROVIDER: proxies}, "proxy-groups": [group],
+            "rule-providers": rule_providers,
+            "rules": ["RULE-SET,nju-direct,DIRECT", f"RULE-SET,nju-vpn,{group['name']}"]}
+
+
+def _proxies(config, settings):
+    return [_proxy(config, settings), {"name": direct_proxy_name(settings), "type": "direct"}]
+
+
+def clash_parts(entries, config, settings):
+    """Self-contained additions (providers inline), for clients that cannot read our files;
+    they must be imported again when the policy changes."""
+    def inline(rules):
+        return {"type": "inline", "behavior": "classical", "payload": rules}
+    return _parts(settings, {"type": "inline", "payload": _proxies(config, settings)},
+                  {"nju-direct": inline(direct_rules(entries, config)),
+                   "nju-vpn": inline(clash_rules(entries, resolve_domains(settings)))})
 
 
 def installed_parts(settings):
@@ -139,14 +128,9 @@ def installed_parts(settings):
     def provider(name):
         return {"type": "file", "behavior": "classical", "format": "yaml",
                 "path": "./" + PROVIDER_FILES[name], "interval": PROVIDER_INTERVAL}
-    # the direct member lives in the provider too: mihomo puts a group's `proxies` before its
-    # `use` providers, and the fallback group must try zju-connect first
-    group = _group(settings, {"use": [PROXY_PROVIDER]})
-    return {"proxy-providers": {PROXY_PROVIDER: {"type": "file", "path": "./" + PROVIDER_FILES[PROXY_PROVIDER],
-                                                 "interval": PROVIDER_INTERVAL}},
-            "proxy-groups": [group],
-            "rule-providers": {"nju-direct": provider("nju-direct"), "nju-vpn": provider("nju-vpn")},
-            "rules": ["RULE-SET,nju-direct,DIRECT", f"RULE-SET,nju-vpn,{group['name']}"]}
+    return _parts(settings, {"type": "file", "path": "./" + PROVIDER_FILES[PROXY_PROVIDER],
+                             "interval": PROVIDER_INTERVAL},
+                  {"nju-direct": provider("nju-direct"), "nju-vpn": provider("nju-vpn")})
 
 
 def provider_files(entries, config, settings, header):
@@ -154,7 +138,7 @@ def provider_files(entries, config, settings, header):
     def payload(title, rules):
         lines = [f"# {line}" for line in header] + [f"# {title}", "payload:"]
         return "\n".join(lines + [f"  - '{rule}'" for rule in rules]) + "\n"
-    proxies = [_proxy(config, settings), {"name": direct_proxy_name(settings), "type": "direct"}]
+    proxies = _proxies(config, settings)
     return {
         PROVIDER_FILES["nju-vpn"]: payload("NJU resources (through zju-connect)",
                                            clash_rules(entries, resolve_domains(settings))),
@@ -204,13 +188,19 @@ function main(config) {{
 """
 
 
+def verge_loaded(rules):
+    """Whether the configuration Clash Verge Rev last built has these rules: True, False, or
+    None when it cannot tell (it writes that configuration to clash-verge.yaml on every rebuild)."""
+    try:
+        built = (paths.VERGE_DIR / "clash-verge.yaml").read_text(errors="replace")
+    except OSError:
+        return None
+    return all(rule in built for rule in rules)
+
+
 def verge_script_path():
     """Clash Verge Rev's global script, if Clash Verge Rev is installed."""
     return paths.VERGE_DIR / "profiles/Script.js" if paths.VERGE_DIR.is_dir() else None
-
-
-def verge_ruleset_path():
-    return paths.VERGE_DIR / "ruleset/nju-vpn.yaml"
 
 
 # ------------------------------------------------- restarting Clash Verge Rev
