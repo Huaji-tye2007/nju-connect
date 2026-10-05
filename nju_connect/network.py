@@ -6,7 +6,7 @@ import struct
 import sys
 from pathlib import Path
 
-from . import paths
+from . import direct, paths
 from .config import DEFAULT_HTTP_PORT, DEFAULT_SOCKS_PORT, bind_port
 from .util import die
 
@@ -159,6 +159,8 @@ def instance_problems(config, ignore_service=False):
         if not bind:
             continue
         port = bind_port(bind, default)
+        if ignore_service and direct.active_pid():
+            continue   # the service's direct proxy holds the ports on campus
         if port_in_use(port):
             problems.append(f"port {port} ({key}) is already in use")
     return problems

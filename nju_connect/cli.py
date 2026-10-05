@@ -7,7 +7,7 @@ import subprocess
 import sys
 from pathlib import Path
 
-from . import INSTALL_URL, VERSION, __doc__ as PACKAGE_DOC, configure, exporters, paths, service
+from . import INSTALL_URL, VERSION, __doc__ as PACKAGE_DOC, configure, direct, exporters, paths, service
 from .config import DEFAULT_HTTP_PORT, DEFAULT_SERVER, bind_port, load_config, load_settings, socks_address
 from .daemon import run_daemon
 from .network import campus_servers_with_source, on_campus, port_in_use, running_instances, vpn_healthy
@@ -78,9 +78,14 @@ def status():
     servers, source = campus_servers_with_source(settings)
     print("campus check: ", f"DNS {', '.join(servers)} ({source})")
     listening = port_in_use(socks, host)
-    print("VPN:          ", "connected" if listening and vpn_healthy(settings, (host, socks)) else "not connected")
-    print("proxies:      ", f"SOCKS5 {host}:{socks}, HTTP {host}:{http}"
-          + ("" if listening else " (not running)"))
+    if direct.active_pid():
+        # a DNS query through the direct proxy would reach the campus DNS too
+        print("VPN:          ", "not connected (on campus)")
+        print("proxies:      ", f"SOCKS5 {host}:{socks}, HTTP {host}:{http} (connect directly while on campus)")
+    else:
+        print("VPN:          ", "connected" if listening and vpn_healthy(settings, (host, socks)) else "not connected")
+        print("proxies:      ", f"SOCKS5 {host}:{socks}, HTTP {host}:{http}"
+              + ("" if listening else " (not running)"))
     print("service:      ", service.state())
     for pid, exe, owner, in_service in running_instances():
         if not in_service:

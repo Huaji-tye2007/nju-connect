@@ -27,6 +27,8 @@ SETTINGS_DEFAULTS = {
         "mode": "auto",              # auto: connect only off campus; always: everywhere
         "check_interval": "60",
         "ruleset_interval": "1800",  # how often the access policy and exports are refreshed
+        # on campus (zju-connect stopped): direct = serve the proxy ports with a direct proxy
+        "campus_proxy": "direct",
     },
     "campus": {
         # NJU's internal DNS servers only answer from inside the campus network;
@@ -283,6 +285,9 @@ OPTIONS = [
            kind="int", minimum=10, effects=[RESTART], advanced=True),
     Option("daemon.ruleset_interval", "Seconds between access-policy (and export) updates",
            ini=("daemon", "ruleset_interval"), kind="int", minimum=300, effects=[RESTART], advanced=True),
+    Option("daemon.campus_proxy", "On campus, serve the proxy ports with a direct proxy (direct) or not (off)",
+           ini=("daemon", "campus_proxy"), kind="choice", choices=("direct", "off"), effects=[RESTART],
+           advanced=True),
     Option("campus.dns_servers", "Campus DNS servers used to detect the campus network (auto or a list)",
            ini=("campus", "dns_servers"), kind="ipv4list", effects=[RESTART], advanced=True),
     Option("campus.probe_name", "Host name asked for when probing the campus DNS",

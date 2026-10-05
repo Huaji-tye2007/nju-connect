@@ -10,6 +10,7 @@ import time
 
 from . import paths
 from .config import load_config, load_settings, socks_address
+from .direct import DirectProxy
 from .network import instance_problems, on_campus, port_in_use, vpn_healthy
 from .exporters import refresh_exports
 from .policy import update_policy
@@ -41,6 +42,27 @@ class Supervisor:
         self.needs_input = False
         self.login_mark = None      # session mtime when a manual login became necessary
         self.waiting_for_login = False
+        # on campus the proxy ports connect directly, so rules pointing at zju-connect still work
+        self.direct = DirectProxy(config) if settings["daemon"]["campus_proxy"] == "direct" else None
+        self.direct_failed = False
+
+    def start_direct(self):
+        if not self.direct or self.direct.running:
+            return
+        try:
+            self.direct.start()
+        except OSError as e:
+            if not self.direct_failed:
+                self.direct_failed = True
+                log(f"Could not open the direct proxy on the proxy ports: {e}")
+            return
+        self.direct_failed = False
+        log("On campus: the proxy ports now connect directly")
+
+    def stop_direct(self):
+        if self.direct and self.direct.running:
+            self.direct.stop()
+            log("Direct proxy stopped")
 
     def start(self):
         log("Off campus: starting zju-connect")
@@ -148,9 +170,11 @@ class Supervisor:
             return
         if campus:
             self.stop("on campus")
+            self.start_direct()
             self.healthy()
             return
 
+        self.stop_direct()   # free the ports for zju-connect
         if not self.proc:
             if port_in_use(self.socks[1], self.socks[0]):
                 # another zju-connect (e.g. `nju-connect connect`) owns the port
@@ -196,6 +220,7 @@ def run_daemon():
 
     def shutdown(signum, _frame):
         supervisor.stop(f"signal {signum}")
+        supervisor.stop_direct()
         sys.exit(0)
     signal.signal(signal.SIGTERM, shutdown)
     signal.signal(signal.SIGINT, shutdown)
