@@ -8,7 +8,7 @@ from contextlib import redirect_stderr, redirect_stdout
 from pathlib import Path
 from unittest import mock
 
-from nju_connect import cli, clients, config, exporters, paths, singbox, xray
+from nju_connect import cli, clients, config, exporters, paths, policy, singbox, xray
 from tests.test_install import SING_BOX_CONFIG
 from tests.test_policy_and_exports import ExportFixture, remembered_dict
 
@@ -105,7 +105,8 @@ class SeveralExportsTest(ExportFixture):
         for name in ("profiles/Script.js", "ruleset/nju-vpn.yaml", "ruleset/nju-direct.yaml"):
             self.assertRegex(text, rf"{name}\s+updated 0\.0h ago")
         self.assertRegex(text, r"proxies/nju-connect\.yaml\s+missing")
-        self.assertIn("import it again after it changes", text)   # v2rayn
+        self.assertRegex(text, r"v2rayn\s*\* ")                     # imported by hand: marked
+        self.assertIn("* your client keeps its own copy", text)
 
 
 class MigrationTest(ExportFixture):
@@ -181,3 +182,60 @@ class UnwritableInstallTest(ExportFixture):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class ResourceChangesTest(ExportFixture):
+    """Self-contained exports need importing again only when what the policy grants changes."""
+
+    def setUp(self):
+        super().setUp()
+        if policy.CHANGES.exists():
+            policy.CHANGES.unlink()
+
+    def write_policy(self, extra_ip="1.2.3.4", extra_domain=None):
+        from tests import test_policy_and_exports as base
+        apps = [base.app(base.addr("lib.nju.edu.cn", "80")),
+                base.app(base.addr("pan.example.com", "443", ip=[extra_ip]))]
+        if extra_domain:
+            apps.append(base.app(base.addr(extra_domain, "443")))
+        paths.RESOURCE.write_text(base.with_nodes(base.resource(apps), ["219.219.118.25:441"]))
+
+    def test_resolved_ips_are_not_a_change(self):
+        self.write_policy()
+        self.assertIsNone(policy.record_changes(paths.RESOURCE.read_bytes()))      # first record
+        self.write_policy(extra_ip="5.6.7.8")                                      # only the resolved IP
+        self.assertEqual(policy.record_changes(paths.RESOURCE.read_bytes()), ([], []))
+        self.write_policy(extra_ip="5.6.7.8", extra_domain="new.nju.edu.cn")
+        added, removed = policy.record_changes(paths.RESOURCE.read_bytes())
+        self.assertEqual((len(added), removed), (1, []))
+        self.assertIn("domain new.nju.edu.cn", added[0])
+        self.assertIsNotNone(policy.last_change())
+
+    def test_notified_once_and_only_for_hand_imported_exports(self):
+        self.write_policy()
+        with mock.patch("builtins.print"):
+            exporters.export("pac", self.tmp / "nju.pac")             # read by the browser: no notice
+        with mock.patch.object(exporters, "notify") as notify:
+            exporters.refresh_exports(quiet=True)                     # the first record
+            self.write_policy(extra_domain="new.nju.edu.cn")
+            exporters.refresh_exports(quiet=True)
+        notify.assert_not_called()
+        with mock.patch("builtins.print"):
+            exporters.export("mihomo-script", self.tmp / "nju.js")
+        with mock.patch.object(exporters, "notify") as notify:
+            self.write_policy(extra_ip="9.9.9.9", extra_domain="new.nju.edu.cn")   # resolved IP only
+            exporters.refresh_exports(quiet=True)
+            notify.assert_not_called()
+            self.write_policy(extra_ip="9.9.9.9")                                  # a domain removed
+            exporters.refresh_exports(quiet=True)
+            exporters.refresh_exports(quiet=True)                                  # nothing new: once
+        notify.assert_called_once()
+        self.assertIn("0 added, 1 removed", notify.call_args.args[0])
+        self.assertIn("mihomo-script", notify.call_args.args[0])
+
+    def test_unchanged_files_are_not_rewritten(self):
+        out = self.tmp / "nju-vpn.yaml"
+        with mock.patch("builtins.print"):
+            exporters.export("clash", out)
+        self.assertNotIn("Updated:", out.read_text())     # no timestamp in the header
+        self.assertEqual(exporters.refresh_exports(quiet=True), 0)

@@ -114,7 +114,7 @@ def _proxies(config, settings):
 
 def clash_parts(entries, config, settings):
     """Self-contained additions (providers inline), for clients that cannot read our files;
-    they must be imported again when the policy changes."""
+    they must be imported again when what the policy grants changes."""
     def inline(rules):
         return {"type": "inline", "behavior": "classical", "payload": rules}
     return _parts(settings, {"type": "inline", "payload": _proxies(config, settings)},

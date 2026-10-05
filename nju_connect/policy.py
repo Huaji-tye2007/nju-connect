@@ -93,8 +93,12 @@ def _node_entries(data):
     return [Entry("node", cidr, None, merge_ranges(ports)) for cidr, ports in found.items()]
 
 
-def parse_policy(resource):
-    """Return (entries, skipped) for the raw resource.json bytes."""
+def parse_policy(resource, resolved_ips=True):
+    """Return (entries, skipped) for the raw resource.json bytes.
+
+    resolved_ips=False leaves out the IPs the server resolved a domain to: they change from
+    one download to the next (CDNs, several servers), unlike what the policy itself grants.
+    """
     data = json.loads(resource)
     if data.get("code") != 0:
         raise ValueError(f"resource has code {data.get('code')}: {data.get('message')}")
@@ -136,7 +140,7 @@ def parse_policy(resource):
                 continue
             else:
                 found[("domain", host, network)].append(ports)
-            for ip in addr.get("ip") or []:
+            for ip in (addr.get("ip") or []) if resolved_ips else []:
                 for net in ipv4_networks(ip) or []:
                     found[("cidr", str(net), network)].append(ports)
 
@@ -145,6 +149,45 @@ def parse_policy(resource):
     entries += _node_entries(data)
     entries.sort(key=lambda e: (KIND_ORDER[e.kind], e.value, e.network or ""))
     return entries, dict(skipped)
+
+
+CHANGES = paths.STATE_DIR / "policy-changes.json"   # what the policy grants, and when that last changed
+
+
+def granted(resource):
+    """What the policy grants, without the server's resolved IPs: domains, IP ranges, ports and
+    protocols, and the VPN nodes. A self-contained export only needs importing again when this
+    changes."""
+    entries, _ = parse_policy(resource, resolved_ips=False)
+    return sorted(f"{e.kind} {e.value} {e.network or 'tcp+udp'} "
+                  + ",".join(f"{lo}-{hi}" for lo, hi in e.ports) for e in entries)
+
+
+def record_changes(resource):
+    """Compare what the cached policy grants with the last record; returns (added, removed), or
+    None the first time. The record keeps when it last changed (see last_change)."""
+    now = granted(resource)
+    try:
+        last = json.loads(CHANGES.read_text())
+    except (OSError, ValueError):
+        last = None
+    if last is not None and last.get("granted") == now:
+        return [], []
+    from datetime import datetime
+    write_atomic(CHANGES, json.dumps({"granted": now, "changed": datetime.now().astimezone()
+                                      .isoformat(timespec="seconds")}, indent=0) + "\n", 0o644)
+    if last is None:
+        return None
+    before = set(last.get("granted") or [])
+    return sorted(set(now) - before), sorted(before - set(now))
+
+
+def last_change():
+    """When what the policy grants last changed (ISO time), or None if not recorded yet."""
+    try:
+        return json.loads(CHANGES.read_text()).get("changed")
+    except (OSError, ValueError):
+        return None
 
 
 def update_policy(force=False, min_ratio=0.5):

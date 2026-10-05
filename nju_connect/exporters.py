@@ -2,8 +2,9 @@
 
 Two kinds of export: `--install` puts the rules where the client keeps reading them (files
 nju-connect keeps up to date, merged into the client's config once), so policy changes
-reach it by themselves; everything else is self-contained (rules inline), and the client
-needs it imported or merged again when the policy changes.
+reach it by themselves; everything else is self-contained (rules inline): the file is kept
+up to date, but the client only sees that when it is imported again, which matters when what
+the policy grants changes (policy.record_changes), not when only resolved IPs differ.
 """
 
 import json
@@ -13,7 +14,7 @@ from collections import namedtuple
 from datetime import datetime
 from pathlib import Path
 
-from . import DOCS_URL, VERSION, clash, clients, paths, singbox, xray
+from . import DOCS_URL, VERSION, clash, clients, paths, policy, singbox, xray
 from .config import DEFAULT_HTTP_PORT, DEFAULT_SERVER, MARKER, bind_port, load_config, load_settings, \
     save_settings, socks_address
 from .policy import all_ports, load_policy, nodes, routed
@@ -21,8 +22,8 @@ from .util import ask_yes, die, log, notify, read_json_config, styler, write_ato
 
 
 def _header(entries, skipped, config):
+    # no timestamp: a file whose rules did not change is not rewritten (see `export --list`)
     lines = [f"{MARKER} {VERSION} from the NJU aTrust access policy",
-             f"Updated: {datetime.now().astimezone().isoformat(timespec='seconds')}",
              f"Server: {config.get('server_address', DEFAULT_SERVER)}  Entries: {len(routed(entries))}"]
     return lines + [f"Skipped {n}: {why}" for why, n in sorted(skipped.items())]
 
@@ -179,6 +180,11 @@ def render_list(entries, skipped, config, settings):
     return "\n".join(lines) + "\n"
 
 
+# what every self-contained export says about importing it again
+AGAIN = ("Import or merge it again when NJU adds or removes resources or changes its VPN servers: the "
+         "service notifies you, and `export --list` shows when that last happened. Not needed when only "
+         "the IPs the server resolved its domains to differ (the domains still match).")
+
 # render: (entries, skipped, config, settings) -> text, or None for an install-only format.
 # summary: one line for the list of formats; description, output (what -o means), install
 # (what --install does, None if not supported) and examples: that format's own --help.
@@ -196,8 +202,8 @@ FORMATS = {
         render_clash_config, "mihomo: --install for mihomo itself, else a self-contained snippet",
         "With --install: writes the NJU rule sets and the NJUConnect proxy as files into mihomo's home "
         "folder, kept up to date by the service (mihomo rereads them by itself), and prints what to merge "
-        "into config.yaml once. Without: prints a self-contained snippet (everything inline) to merge by "
-        "hand, again after each policy change.",
+        "into config.yaml once. Without: prints a self-contained snippet (everything inline) to merge into "
+        f"config.yaml by hand. {AGAIN}",
         "with --install: mihomo's home folder (or its config.yaml; otherwise found from the running "
         "mihomo, else ~/.config/mihomo); without: the snippet file",
         "write the files into mihomo's folder and print what to merge into config.yaml once",
@@ -214,7 +220,7 @@ FORMATS = {
         render_mihomo_script, "override script for FlClash, Clash Party and other mihomo GUIs",
         "A main(config) override script with the NJUConnect proxy, the NJU group and the rules inline. "
         "Import it in the client (FlClash: Tools > Advanced settings > Scripts; Clash Party: Overrides). "
-        "The file is kept up to date, but the client keeps its own copy: import it again after it changes.",
+        f"The file is kept up to date, but the client keeps its own copy. {AGAIN}",
         "the script to write", None,
         ["nju-connect export mihomo-script -o ~/nju-mihomo.js"]),
     "sing-box": Format(
@@ -229,8 +235,8 @@ FORMATS = {
         "sing-box config (1.11+) and reloads sing-box; the rule sets are kept up to date and sing-box "
         "rereads them by itself. A config you cannot write (e.g. root's /etc/sing-box) is left alone: the "
         f"rule sets go to {paths.SING_BOX_RULE_SETS} and what to merge once is printed. Without "
-        "--install: prints a self-contained snippet (rules inline), to merge again after policy changes; "
-        "its direct rules use the outbound tagged `direct`, which your config must have.",
+        "--install: prints a self-contained snippet (rules inline); its direct rules use the outbound "
+        f"tagged `direct`, which your config must have. {AGAIN}",
         "with --install: the sing-box config (otherwise found from the running sing-box); "
         "without: the snippet file",
         "merge into the config (or print what to merge once) and keep the rules up to date",
@@ -239,9 +245,9 @@ FORMATS = {
         render_xray, "Xray: --install merges into its config, else the outbound and routing rules",
         "With --install: merges the NJUConnect outbound and the routing rules into the Xray config and "
         "restarts Xray, again whenever the policy changes. A config you cannot write is left alone and "
-        "what to merge is printed (merge it again after policy changes, or run Xray as your user). "
-        "Without --install: prints the outbound and routing rules; their direct rules use the outbound "
-        "tagged `direct` (freedom), which your config must have.",
+        "what to merge is printed (better: run Xray as your user). Without --install: prints the outbound "
+        "and routing rules; their direct rules use the outbound tagged `direct` (freedom), which your "
+        f"config must have. {AGAIN}",
         "with --install: the Xray config (otherwise found from the running Xray); without: the file to write",
         "merge into the config and keep it up to date",
         ["nju-connect export xray --install"]),
@@ -249,13 +255,14 @@ FORMATS = {
         render_v2rayn, "v2rayN routing rules to import (NJU rules first)",
         "A rules file for v2rayN's Import Rules From File: the NJU rules followed by the rules of the "
         "active routing, to import with Replace. Prints the share link of the NJUConnect node and the "
-        "steps. The file is kept up to date; import it again after it changes.",
+        f"steps. The file is kept up to date, but v2rayN keeps its own copy. {AGAIN}",
         "the rules file to write", None,
         ["nju-connect export v2rayn -o ~/nju-v2rayn.json"]),
     "pac": Format(
         render_pac, "PAC file for browsers and system proxy settings",
         "A PAC file sending NJU resources to zju-connect's HTTP proxy and everything else DIRECT. "
-        "Point the browser or system proxy at file:///home/<you>/nju.pac; it is kept up to date.",
+        "Point the browser or system proxy at file:///home/<you>/nju.pac; it is kept up to date (a copy "
+        "pasted into a browser extension is not: paste it again when NJU's resources change).",
         "the PAC file to write", None,
         ["nju-connect export pac -o ~/nju.pac"]),
     "list": Format(
@@ -370,7 +377,8 @@ def export(name, output=None, refresh=False, install=False):
         print(v2rayn_steps(output))
     elif name == "mihomo-script":
         print("Import it as an override script in your mihomo GUI (FlClash: Tools > Advanced settings > "
-              f"Scripts; Clash Party: Overrides), and again after it changes: {DOCS_URL}#flclash")
+              "Scripts; Clash Party: Overrides); import it again when the service says NJU's resources "
+              f"changed: {DOCS_URL}#flclash")
 
 
 def v2rayn_steps(output):
@@ -389,7 +397,7 @@ def v2rayn_steps(output):
     lines.append("     and Confirm both windows; v2rayN restarts its core with the new rules")
     if xray.domain_strategy(settings):
         lines.append(f"  3. set Domain strategy in the Routing Setting window to {xray.domain_strategy(settings)}")
-    lines.append("When the policy changes this file is regenerated; repeat step 2 to apply it.")
+    lines.append("The file is kept up to date; repeat step 2 when the service says NJU's resources changed.")
     return "\n".join(lines)
 
 
@@ -697,9 +705,9 @@ class XrayInstaller(Installer):
         return merge_steps(
             f"nju-connect: {target} is not writable by you, so merge this part by hand", [], target, sections,
             ["Then restart Xray. A config outbound tagged direct (freedom) must exist.",
-             "· Not kept up to date: Xray has no rule files to point at, so merge the rules again after",
-             "  the policy changes (`nju-connect export xray --install` prints them), or run Xray as your",
-             "  user with a config you can write, and nju-connect keeps it up to date.",
+             "· Not kept up to date: Xray has no rule files to point at, so merge the rules again when NJU",
+             "  adds or removes resources (`nju-connect export --list` shows when they last changed), or run",
+             "  Xray as your user with a config you can write, and nju-connect keeps it up to date.",
              f"· Details: {DOCS_URL}#xray原生内核"])
 
     def keeps(self, target):
@@ -714,11 +722,17 @@ INSTALLERS = {"clash-verge": VergeInstaller(), "clash-config": MihomoInstaller()
 
 def refresh_exports(entries=None, skipped=None, quiet=False):
     """Regenerate every remembered export; returns the number of exports that changed."""
+    changes = policy.record_changes(paths.RESOURCE.read_bytes()) if paths.RESOURCE.exists() else None
     exports = remembered()
     if not exports:
         return 0
     if entries is None:
         entries, skipped = load_policy()
+    manual = [e.label for e in exports if e.mode != INSTALL and e.format in MANUAL_IMPORT]
+    if changes and any(changes) and manual:
+        added, removed = changes
+        notify(f"NJU's resources changed ({len(added)} added, {len(removed)} removed): "
+               f"import {', '.join(manual)} again in your client (see `nju-connect export --list`)")
     changed = 0
     for e in exports:
         if e.format not in FORMATS:
@@ -736,7 +750,8 @@ def refresh_exports(entries=None, skipped=None, quiet=False):
             continue
         changed += 1
         if not quiet:
-            again = "; import it again in your client" if e.format in MANUAL_IMPORT else ""
+            again = "; import it again in your client" if e.format in MANUAL_IMPORT and changes and any(changes) \
+                else ""
             print(f"Updated {e.path} ({e.label}){again}")
     return changed
 
@@ -753,6 +768,14 @@ def list_exports():
     if not exports:
         print("No remembered exports; create one with `nju-connect export FORMAT --install` "
               "or `nju-connect export FORMAT -o PATH`")
+    changed = policy.last_change()
+    if changed:
+        print(f"NJU's resources (domains, IP ranges, VPN nodes) last changed: {changed[:16].replace('T', ' ')}")
+    if any(e.format in MANUAL_IMPORT and e.mode != INSTALL for e in exports):
+        print("* your client keeps its own copy: import it again when NJU's resources change "
+              "(the service notifies you)")
+    if changed or any(e.format in MANUAL_IMPORT for e in exports):
+        print()
     for e in exports:
         if e.mode == INSTALL and e.format in INSTALLERS:
             installer = INSTALLERS[e.format]
@@ -762,5 +785,5 @@ def list_exports():
             for path, what in files:
                 print(f"    {str(path).ljust(width)}{_age(path):<20}{what}".rstrip())
         else:
-            again = "; import it again after it changes" if e.format in MANUAL_IMPORT else ""
-            print(f"{e.label:<16} {e.path}  ({_age(e.path)}{again})")
+            mark = "*" if e.format in MANUAL_IMPORT else " "
+            print(f"{e.label:<15}{mark} {e.path}  ({_age(e.path)})")
