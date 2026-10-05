@@ -80,6 +80,7 @@ nju-connect config set account.password       # 不写值时会提示输入（�
 | `daemon.mode`                                                    | `auto`：只在校外连接；`always`：始终连接                                             | `auto`                                        |
 | `daemon.check_interval`                                          | 检查网络的间隔（秒，≥10）                                                            | `60`                                          |
 | `daemon.ruleset_interval`                                        | 更新访问策略和导出文件的间隔（秒，≥300）                                             | `1800`                                        |
+| `daemon.campus_proxy`                                            | 在校内（zju-connect 停止时）由 nju-connect 在代理端口上提供直连代理：`direct` 或 `off` | `direct`                                      |
 | `campus.dns_servers` / `campus.probe_name`                       | 用于判断是否在校园网的内网 DNS（`auto`：取自访问策略）和查询域名                     | `auto` / `www.nju.edu.cn`                     |
 | `export.proxy_name` / `export.group_name`                        | 导出的 Clash/Xray 配置中的代理和策略组名称                                           | `NJUConnect` / `NJU`                          |
 | `export.group_type`                                              | Clash 策略组类型：`fallback`、`url-test`、`select`                                   | `fallback`                                    |
@@ -100,7 +101,7 @@ nju-connect config set account.password       # 不写值时会提示输入（�
 | 原生 mihomo                    | `nju-connect export clash -o ~/.config/mihomo/ruleset/nju-vpn.yaml` 和 `clash-config` | 把片段合并进 `config.yaml`（一次）                         | 自动                         |
 | sing-box                       | `nju-connect export sing-box -o …` 和 `sing-box-config`      | 把出站和路由规则合并进配置（一次）                         | 自动                         |
 | Xray                           | `nju-connect export xray --install -o ~/.config/xray/config.json` | 无（Xray 作为系统服务运行时需手动重启）                    | 自动合并并重启 Xray 用户服务 |
-| v2rayN                         | `nju-connect export v2rayn -o ~/nju-v2rayn.json`             | 导入一次节点链接；在路由设置中导入规则文件、设置域名解析策略 | 重新导入规则文件             |
+| v2rayN（Xray / sing-box 内核） | `nju-connect export v2rayn -o ~/nju-v2rayn.json`             | 导入一次节点链接；在路由设置中导入规则文件；mihomo 内核不支持 | 重新导入规则文件             |
 | v2rayA                         | `nju-connect export list`                                    | **不直接支持**：按列表手写 RoutingA 规则                   | 手动修改                     |
 | 浏览器 / 系统代理              | `nju-connect export pac -o ~/nju.pac`                        | 设置 PAC 地址 `file:///home/<用户名>/nju.pac`（一次）      | 自动                         |
 
@@ -126,22 +127,22 @@ nju-connect export --forget sing-box # 不再自动更新（文件保留）
 nju-connect export clash --refresh   # 先重新下载访问策略
 ```
 
-**按 IP 段匹配的南大网站**：学校的访问策略中有不少网站只以 IP 段出现（例如 `xk.nju.edu.cn`、`ehall.nju.edu.cn` 属于 `219.219.112.0/20`，`lms.nju.edu.cn` 属于 `202.119.32.0/19`），zju-connect 会解析域名后按 IP 走 VPN。为了让代理工具也这样处理，导出的规则会解析 `export.resolve_domains` 中的域名（默认 `nju.edu.cn`）再匹配 IP 段，其他域名不会因此多一次 DNS 查询：
+**按 IP 段匹配的南大网站**：学校的访问策略中有不少网站只以 IP 段出现（例如 `xk.nju.edu.cn`、`ehall.nju.edu.cn` 属于 `219.219.112.0/20`，`lms.nju.edu.cn` 属于 `202.119.32.0/19`），zju-connect 会解析域名后按 IP 走 VPN。为了让代理工具也这样处理，导出的规则对 `export.resolve_domains` 中的域名（默认 `nju.edu.cn`）做了特殊处理，其他域名不受影响：
 
 - Clash/mihomo：每个 IP 段生成 `IP-CIDR,…,no-resolve`（直接访问 IP 时）和 `AND,((DOMAIN-SUFFIX,nju.edu.cn),(IP-CIDR,…))`（只解析南大域名）两条规则
 - sing-box：`sing-box-config` 先按域名匹配规则集，再对南大域名执行 `resolve` 后按 IP 匹配
-- Xray / v2rayN：设置 `domainStrategy: IPOnDemand`（v2rayN 中为规则集的“域名解析策略”）。Xray 无法只解析部分域名，因此所有域名都会在经过这些规则时被解析一次
+- Xray / v2rayN：在南大规则之后加一条 `domain:nju.edu.cn` 规则，把其余南大域名整体交给 zju-connect，由它通过 VPN 用校园网 DNS 解析，再按访问策略决定走 VPN 还是直连。这样代理客户端不需要自己解析域名（在校外只能用公网 DNS），也不用修改域名解析策略
 - PAC：只对南大域名调用 `dnsResolve`
 
 所有格式都会让 VPN 服务器和节点地址（如 `219.219.118.25`）直连，避免开启 TUN 模式时 zju-connect 自己的连接被转发回自身。
 
-导出的 Clash 策略组为 `fallback` 类型：VPN 在线时走 zju-connect，zju-connect 停止时（例如在校内）自动改为直连。mihomo 只能读取其主目录下的规则集文件，因此当 `clash` 导出文件不在 Clash Verge Rev 或 `~/.config/mihomo` 目录中时，`clash-verge` / `clash-config` 会把规则直接写进脚本或片段。
+**在校内**：`auto` 模式在校内会停止 zju-connect，此时 nju-connect 自己在同样的 SOCKS5/HTTP 端口上提供一个直连代理（`daemon.campus_proxy`），因此把南大流量交给 `127.0.0.1:1080` 的规则在校内也能正常使用。导出的 Clash 策略组还是 `fallback` 类型：VPN 在线时走 zju-connect，不可用时自动改为直连。mihomo 只能读取其主目录下的规则集文件，因此当 `clash` 导出文件不在 Clash Verge Rev 或 `~/.config/mihomo` 目录中时，`clash-verge` / `clash-config` 会把规则直接写进脚本或片段。
 
 ## 后台服务如何工作
 
 服务每分钟检查一次：
 
-- **是否在校园网**（`auto` 模式）：直接（不经过 VPN）向南大内网 DNS 查询 `www.nju.edu.cn`。这些服务器使用 10.x 私有地址，只有在校园网内才能访问：有应答说明在校内；在校外，请求会发往家里的路由器而超时（每台 2 秒），说明在校外；完全没有网络时直接报错，视为离线。校外启动 zju-connect，校内停止；`always` 模式下始终连接。
+- **是否在校园网**（`auto` 模式）：直接（不经过 VPN）向南大内网 DNS 查询 `www.nju.edu.cn`。这些服务器使用 10.x 私有地址，只有在校园网内才能访问：有应答说明在校内；在校外，请求会发往家里的路由器而超时（每台 2 秒），说明在校外；完全没有网络时直接报错，视为离线。校外启动 zju-connect，校内停止，并改由 nju-connect 在代理端口上提供直连代理（同样监听 SOCKS5 和 HTTP 端口，用校园网 DNS 直接连接；`daemon.campus_proxy = off` 可关闭），离开校园网时先关闭它再启动 zju-connect；`always` 模式下始终连接。
   - 内网 DNS 地址默认（`campus.dns_servers = auto`）从访问策略中自动获取：策略中授权给 VPN 用户、开放 UDP 53 端口的私有地址（目前是 10.12.253.4、10.28.253.4），以及服务器下发的 DNS 设置。学校更换地址后，服务每 30 分钟更新一次访问策略时会自动跟上；还没有下载过访问策略时使用内置的这两个地址。公网 DNS 在校外也会应答，因此不会被采用。`nju-connect service status` 会显示当前使用的地址及来源，也可以用 `nju-connect config set campus.dns_servers 地址,地址` 手动指定。
 - **VPN 是否可用**：通过 SOCKS5 代理向内网 DNS 查询，连续 3 次失败则重启 zju-connect。
 - **访问策略**：VPN 可用时每 30 分钟更新一次，并重新生成已记住的导出文件。
@@ -185,6 +186,7 @@ nju-connect export clash --refresh   # 先重新下载访问策略
 | `exporters.py` | 各种导出格式和已记住的导出文件                             |
 | `clash.py`     | Clash/mihomo 相关格式                                      |
 | `xray.py`      | Xray/v2rayN 相关格式，合并 Xray 配置并重启 Xray            |
+| `direct.py`    | 在校内代替 zju-connect 提供的直连 SOCKS5/HTTP 代理         |
 
 - 测试：`python3 -m unittest discover -s tests -t .`
 - 直接运行源码：`python3 -m nju_connect --help`
