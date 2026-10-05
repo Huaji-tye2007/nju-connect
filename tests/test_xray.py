@@ -7,7 +7,7 @@ from pathlib import Path
 from unittest import mock
 
 from nju_connect import clients, exporters, util, xray
-from tests.test_policy_and_exports import ExportFixture
+from tests.test_policy_and_exports import ExportFixture, remembered_dict
 
 # the fields of v2rayN's RulesItem (ServiceLib/Models/Entities/RulesItem.cs)
 V2RAYN_FIELDS = {"id", "type", "port", "network", "inboundtag", "outboundtag", "ip", "domain",
@@ -101,7 +101,7 @@ class V2raynTest(ExportFixture):
         self.assertIn("https://github.com/Huaji-tye2007/nju-connect-cli/blob/main/docs/proxy-clients.md#v2rayn",
                       printed)   # installed users have no docs/ folder
         self.assertNotIn("Domain strategy", printed)   # not needed: nju.edu.cn goes to zju-connect
-        self.assertEqual(exporters.remembered(), {"v2rayn": str(out.resolve())})
+        self.assertEqual(remembered_dict(), {"v2rayn": str(out.resolve())})
 
 
 class XrayMergeTest(ExportFixture):
@@ -135,7 +135,7 @@ class XrayMergeTest(ExportFixture):
         self.assertEqual(data["log"]["note"], "http://example.com/*x*/")
         self.assertEqual(stat.S_IMODE(self.conf.stat().st_mode), 0o640)
         self.assertEqual(len(list(self.tmp.glob("config.json.bak-*"))), 1)
-        self.assertEqual(exporters.remembered(), {"xray": exporters.INSTALL + str(self.conf.resolve())})
+        self.assertEqual(remembered_dict(), {"xray": exporters.INSTALL + str(self.conf.resolve())})
 
     def test_merging_again_is_idempotent(self):
         self.install()

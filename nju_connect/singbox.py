@@ -66,6 +66,25 @@ def _ours(rule):
     return any(tag in RULE_SETS for tag in used)
 
 
+def additions(files, config, settings, direct="direct"):
+    """(outbound, rule sets, rules) an install adds; files: {tag: path of its rule-set source}."""
+    tag = settings["export"]["proxy_name"]
+    host, port = socks_address(config)
+    outbound = {"type": "socks", "tag": tag, "server": host, "server_port": port, "version": "5"}
+    rule_sets = [{"type": "local", "tag": name, "format": "source", "path": str(path)}
+                 for name, path in files.items()]
+    rules = [{"rule_set": "nju-direct", "outbound": direct}, {"rule_set": "nju-vpn", "outbound": tag}]
+    if "nju-resolve" in files:
+        rules += [{"rule_set": "nju-resolve", "action": "resolve"}, {"rule_set": "nju-vpn", "outbound": tag}]
+    return outbound, rule_sets, rules
+
+
+def direct_tag(data):
+    """The tag of the config's direct outbound, or None."""
+    return next((o.get("tag") for o in data.get("outbounds") or []
+                 if isinstance(o, dict) and o.get("type") == "direct" and o.get("tag")), None)
+
+
 def merge_config(data, files, config, settings):
     """A copy of a sing-box config with our outbound, rule sets and rules (files: {tag: path}).
 
@@ -73,22 +92,17 @@ def merge_config(data, files, config, settings):
     appended, so the first outbound (the default without route.final) stays the user's.
     """
     tag = settings["export"]["proxy_name"]
-    host, port = socks_address(config)
     data = dict(data)
     outbounds = [o for o in data.get("outbounds") or [] if o.get("tag") != tag]
-    direct = next((o.get("tag") for o in outbounds if o.get("type") == "direct" and o.get("tag")), None)
+    direct = direct_tag(data)
     if direct is None:
         direct = "direct"
         outbounds.append({"type": "direct", "tag": direct})
-    data["outbounds"] = outbounds + [{"type": "socks", "tag": tag, "server": host, "server_port": port,
-                                      "version": "5"}]
+    outbound, rule_sets, rules = additions(files, config, settings, direct)
+    data["outbounds"] = outbounds + [outbound]
     route = dict(data.get("route") or {})
-    route["rule_set"] = [r for r in route.get("rule_set") or [] if r.get("tag") not in RULE_SETS] + [
-        {"type": "local", "tag": name, "format": "source", "path": str(path)} for name, path in files.items()]
-    ours = [{"rule_set": "nju-direct", "outbound": direct}, {"rule_set": "nju-vpn", "outbound": tag}]
-    if "nju-resolve" in files:
-        ours += [{"rule_set": "nju-resolve", "action": "resolve"}, {"rule_set": "nju-vpn", "outbound": tag}]
-    route["rules"] = ours + [r for r in route.get("rules") or [] if not _ours(r)]
+    route["rule_set"] = [r for r in route.get("rule_set") or [] if r.get("tag") not in RULE_SETS] + rule_sets
+    route["rules"] = rules + [r for r in route.get("rules") or [] if not _ours(r)]
     data["route"] = route
     return data
 
@@ -100,9 +114,14 @@ def sing_box_binary():
     return None
 
 
-def write_rule_sets(path, entries, config, settings):
-    """Write the rule-set sources next to the config; returns ({tag: path}, changed)."""
-    folder = Path(path).expanduser().resolve().parent / FILES_DIR
+def rule_sets_folder(config_path):
+    """Where an install keeps the rule sets: next to the config."""
+    return Path(config_path).expanduser().resolve().parent / FILES_DIR
+
+
+def write_rule_sets(folder, entries, config, settings):
+    """Write the rule-set sources into folder; returns ({tag: path}, changed)."""
+    folder = Path(folder)
     files, changed = {}, False
     for name, content in rule_set_files(entries, config, settings).items():
         target = folder / f"{name}.json"
@@ -122,7 +141,7 @@ def merge_file(path, entries, config, settings):
     if "/binConfigs/" in str(path.resolve()):
         raise RuntimeError(f"{path} is rewritten by v2rayN; use `nju-connect export v2rayn` for v2rayN")
     text, data = read_json_config(path, "sing-box")
-    files, _ = write_rule_sets(path, entries, config, settings)
+    files, _ = write_rule_sets(rule_sets_folder(path), entries, config, settings)
     first = not any(isinstance(r, dict) and r.get("tag") in RULE_SETS
                     for r in (data.get("route") or {}).get("rule_set") or [])
     merged = merge_config(data, files, config, settings)

@@ -6,7 +6,7 @@ from contextlib import redirect_stdout
 from unittest import mock
 
 from nju_connect import clash, clients, config, exporters, paths, singbox, util
-from tests.test_policy_and_exports import ExportFixture
+from tests.test_policy_and_exports import ExportFixture, remembered_dict
 
 SING_BOX_CONFIG = """{
   // a hand-written config
@@ -41,7 +41,7 @@ class MihomoInstallTest(ExportFixture):
 
     def test_files_and_steps(self):
         text = self.install()
-        self.assertEqual(exporters.remembered(), {"clash-config": exporters.INSTALL + str(self.home)})
+        self.assertEqual(remembered_dict(), {"clash-config": exporters.INSTALL + str(self.home)})
         self.assertIn("'IP-CIDR,219.219.118.25/32,no-resolve'", (self.home / "ruleset/nju-direct.yaml").read_text())
         self.assertIn("'IP-CIDR,114.212.0.0/16,no-resolve'", (self.home / "ruleset/nju-vpn.yaml").read_text())
         self.assertIn('"port": 2080', (self.home / "proxies/nju-connect.yaml").read_text())
@@ -113,7 +113,7 @@ class SingBoxInstallTest(ExportFixture):
         self.assertEqual(json.loads((folder / "nju-resolve.json").read_text())["rules"],
                          [{"domain_suffix": ["nju.edu.cn"]}])
         self.assertEqual(len(list(self.tmp.glob("config.json.bak-*"))), 1)
-        self.assertEqual(exporters.remembered(), {"sing-box-config": exporters.INSTALL + str(self.conf)})
+        self.assertEqual(remembered_dict(), {"sing-box-config": exporters.INSTALL + str(self.conf)})
 
     def test_again_is_idempotent_and_policy_changes_need_no_reload(self):
         first = self.install()

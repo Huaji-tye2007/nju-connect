@@ -174,13 +174,16 @@ def choose_config(core, output=None):
     raise RuntimeError(f"no running {name} and no config in {usual}; use -o PATH")
 
 
-def require_writable(path):
-    """RuntimeError unless path (or, if it does not exist yet, the folder it would go in) is writable."""
-    path = Path(path).expanduser()
-    target = path
+def writable(path):
+    """Whether path (or, if it does not exist yet, the folder it would go in) is writable."""
+    target = Path(path).expanduser()
     while not target.exists() and target != target.parent:
         target = target.parent
-    if not os.access(target, os.W_OK):
+    return os.access(target, os.W_OK)
+
+
+def require_writable(path):
+    if not writable(path):
         raise RuntimeError(f"{path} is not writable by you (nju-connect does not use sudo); "
                            "run the core as your user with a config in your home directory, "
                            "or merge the printed snippet by hand")

@@ -144,8 +144,9 @@ def load_settings():
     return settings
 
 
-# remembered exports before v0.5.9: `xray --install` was "merge:PATH", and `clash-verge --install`
-# was a plain script path plus the clash ruleset it loaded
+# remembered exports before v0.5.9: `xray --install` was "merge:PATH", `clash-verge --install` a
+# plain script path plus the clash ruleset it loaded, and --inline exports "inline:PATH" (the
+# clash-verge ones were scripts for FlClash or Clash Party, now the mihomo-script format)
 VERGE_SCRIPT = paths.VERGE_DIR / "profiles/Script.js"
 VERGE_RULESET = paths.VERGE_DIR / "ruleset/nju-vpn.yaml"
 
@@ -153,7 +154,13 @@ VERGE_RULESET = paths.VERGE_DIR / "ruleset/nju-vpn.yaml"
 def _old_exports(settings):
     exports = settings["exports"]
     return (exports.get("xray", "").startswith("merge:")
-            or exports.get("clash-verge") == str(VERGE_SCRIPT))
+            or any(value.startswith("inline:") for value in exports.values())
+            or exports.get("clash-verge", "install:").split(":")[0] != "install")
+
+
+def _free_label(exports, name):
+    return name if name not in exports else next(f"{name}@{n}" for n in range(2, 1000)
+                                                 if f"{name}@{n}" not in exports)
 
 
 # the hard-coded campus DNS default before v0.5.5, which became "auto"
@@ -185,6 +192,13 @@ def migrate_settings(settings):
         exports["clash-verge"] = f"install:{VERGE_SCRIPT}"
         if exports.get("clash") == str(VERGE_RULESET):
             del exports["clash"]   # the install keeps its own ruleset files
+    for label, value in list(exports.items()):
+        path = value[len("inline:"):] if value.startswith("inline:") else value
+        if label.split("@")[0] == "clash-verge" and not value.startswith("install:"):
+            del exports[label]
+            exports[_free_label(exports, "mihomo-script")] = path
+        elif value.startswith("inline:"):
+            exports[label] = path   # every export without --install is inline now
 
 
 def save_settings(settings):

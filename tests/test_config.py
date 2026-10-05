@@ -114,8 +114,9 @@ class OptionTest(unittest.TestCase):
             f"group_name = NJU\nscript = {script}\n")
         settings = config.load_settings()
         self.assertEqual(settings["export"]["proxy_name"], "Campus")
+        # a script outside Clash Verge Rev's folder was for another mihomo GUI: now mihomo-script
         self.assertEqual(dict(settings["exports"]), {"clash": "/tmp/x/nju-vpn.yaml",
-                                                     "clash-verge": str(script)})
+                                                     "mihomo-script": str(script)})
         self.assertEqual(settings["daemon"]["check_interval"], "30")
         self.assertNotIn("[clash]", paths.SETTINGS_FILE.read_text())
 

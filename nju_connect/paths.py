@@ -24,6 +24,8 @@ UNIT_FILE = XDG_CONFIG / "systemd/user" / UNIT_NAME
 
 VERGE_DIR = DATA_DIR / "io.github.clash-verge-rev.clash-verge-rev"
 MIHOMO_DIR = XDG_CONFIG / "mihomo"
+# rule sets for a sing-box config nju-connect cannot write (merged by hand once)
+SING_BOX_RULE_SETS = DATA_DIR / "nju-connect/sing-box"
 
 
 def self_path():

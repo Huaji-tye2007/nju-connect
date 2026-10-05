@@ -56,13 +56,14 @@ def cmd_export(args):
     if args.list:
         exporters.list_exports()
     elif args.forget:
-        exporters.forget(args.forget)
-        print(f"{args.forget} is no longer kept up to date (the file was left in place)")
+        for e in exporters.forget(args.forget):
+            print(f"{e.label} ({e.path}) is no longer kept up to date; its files were left in place")
     elif not args.format:
-        die("choose a format (" + ", ".join(exporters.FORMATS) + "), or use --list / --forget")
+        die("choose a format (" + ", ".join(exporters.FORMATS) + "), or use --list / --forget; "
+            "see `nju-connect export -h`")
     else:
         try:
-            exporters.export(args.format, args.output, args.refresh, args.install, args.inline)
+            exporters.export(args.format, args.output, args.refresh, getattr(args, "install", False))
         except RuntimeError as e:
             die(str(e))
 
@@ -92,7 +93,8 @@ def status():
             print("zju-connect:  ", f"PID {pid} ({exe}, user {owner}) started outside the service")
     print("session:      ", "saved" if paths.CLIENT_DATA.exists() else "none (run `nju-connect login`)")
     exports = exporters.remembered(settings)
-    print("exports:      ", ", ".join(exports) if exports else "none (see `nju-connect export --help`)")
+    print("exports:      ", ", ".join(e.label for e in exports) if exports
+          else "none (see `nju-connect export --help`)")
 
 
 def cmd_service(args):
@@ -159,30 +161,64 @@ def export_epilog():
         return f"\033[{code}m{text}\033[0m" if color else text
 
     heading, name, option, prog = "1;34", "1;32", "1;36", "1;35"
-    lines = [c("formats:", heading)]
-    lines += [f"  {c(f'{fmt:<16}', name)}{desc}" for fmt, (_, desc) in exporters.FORMATS.items()]
-    lines += ["", c("examples:", heading)]
+    lines = [c("examples:", heading)]
     examples = [
-        ("Clash Verge Rev: global script and the rule and proxy files it loads", "clash-verge", "--install", ""),
-        ("mihomo: rule and proxy files in its folder, then merge the printed part into config.yaml once",
-         "clash-config", "--install", ""),
-        ("sing-box: merge the outbound, rule sets and rules into its config, then reload it",
-         "sing-box-config", "--install", ""),
-        ("Xray: merge the outbound and routing rules into its config, then restart it", "xray", "--install", ""),
-        ("v2rayN: a rules file to import in its routing settings (prints the steps)",
-         "v2rayn", "-o", "~/nju-v2rayn.json"),
-        ("browsers / system proxy: use file:///home/<you>/nju.pac as the proxy URL", "pac", "-o", "~/nju.pac"),
+        ("Clash Verge Rev, mihomo, sing-box, Xray: set the client up, kept up to date", "clash-verge", "--install"),
+        ("", "clash-config", "--install"),
+        ("", "sing-box-config", "--install"),
+        ("", "xray", "--install"),
+        ("FlClash, Clash Party: an override script to import", "mihomo-script", "-o ~/nju-mihomo.js"),
+        ("v2rayN: a rules file to import (prints the steps)", "v2rayn", "-o ~/nju-v2rayn.json"),
+        ("browsers / system proxy", "pac", "-o ~/nju.pac"),
     ]
-    for note, fmt, flag, path in examples:
+    for note, fmt, rest in examples:
         if note:
             lines.append(f"  # {note}")
+        flag, _, path = rest.partition(" ")
         lines.append("  " + " ".join(x for x in (c("nju-connect", prog), "export", c(fmt, name),
-                                                c(flag, option) if flag else "", path) if x))
-    lines += ["", f"{c('--install', option)} finds the client's config from its running process (or the usual",
-              f"places); {c('-o', option)} chooses another. Installs and files written with {c('-o', option)} are",
-              "remembered and kept up to date by the service;",
-              f"see them with {c('--list', option)}, stop with {c('--forget', option)} FORMAT."]
+                                                c(flag, option), path) if x))
+    lines += ["", f"Each format has its own help: {c('nju-connect export FORMAT -h', option)}.",
+              f"{c('--install', option)} finds the client's config from its running process (or the usual places).",
+              f"Installs and files written with {c('-o', option)} are remembered and kept up to date by the",
+              f"service (several per format); see them with {c('--list', option)}, "
+              f"stop with {c('--forget', option)} FORMAT, PATH or name."]
     return "\n".join(lines)
+
+
+class _FormatHelp(argparse.HelpFormatter):
+    """Wraps the description; keeps the examples epilog line by line."""
+
+    def _fill_text(self, text, width, indent):
+        if text.startswith("examples:"):
+            return "".join(indent + line for line in text.splitlines(keepends=True))
+        return super()._fill_text(text, width, indent)
+
+
+class _InlineGone(argparse.Action):
+    def __call__(self, parser, namespace, values, option_string=None):
+        parser.error("--inline is gone: exports without --install are always inline now; for "
+                     "FlClash or Clash Party use `nju-connect export mihomo-script -o PATH`")
+
+
+def add_export_parser(sub):
+    p = sub.add_parser("export", help="rules for Clash/mihomo, sing-box, Xray, v2rayN or a PAC file",
+                       description="Export the NJU access policy for a proxy client.",
+                       epilog=export_epilog(), formatter_class=argparse.RawDescriptionHelpFormatter)
+    p.add_argument("--list", action="store_true", help="show the remembered exports and the files they keep")
+    p.add_argument("--forget", metavar="WHAT",
+                   help="stop keeping exports up to date: a format, a path, or a name from --list")
+    p.set_defaults(func=cmd_export, format=None)
+    formats = p.add_subparsers(dest="format", metavar="FORMAT", title="formats")
+    for name, fmt in exporters.FORMATS.items():
+        q = formats.add_parser(name, help=fmt.summary, description=fmt.description,
+                               epilog="examples:\n" + "\n".join(f"  {e}" for e in fmt.examples),
+                               formatter_class=_FormatHelp)
+        q.add_argument("-o", "--output", metavar="PATH", help=fmt.output)
+        if fmt.install:
+            q.add_argument("--install", action="store_true", help=fmt.install)
+        q.add_argument("--refresh", action="store_true", help="download the access policy again first")
+        q.add_argument("--inline", nargs=0, action=_InlineGone, help=argparse.SUPPRESS)
+        q.set_defaults(func=cmd_export)
 
 
 def build_parser():
@@ -219,21 +255,7 @@ def build_parser():
     q.add_argument("value", nargs="?", help="new value; omit to be prompted (passwords are hidden)")
     p.set_defaults(func=cmd_config)
 
-    p = sub.add_parser("export", help="rules for Clash, sing-box, Xray or a PAC file",
-                       epilog=export_epilog(), formatter_class=argparse.RawDescriptionHelpFormatter)
-    p.add_argument("format", nargs="?", choices=tuple(exporters.FORMATS), metavar="FORMAT")
-    p.add_argument("-o", "--output", help="write to this file and keep it up to date")
-    p.add_argument("--install", action="store_true",
-                   help="set the client up and keep it up to date: clash-verge (global script), "
-                        "clash-config (files in mihomo's folder), sing-box-config and xray (merged into "
-                        "the config); -o chooses the script, folder or config")
-    p.add_argument("--inline", action="store_true",
-                   help="embed the rules instead of referencing the clash/sing-box export files "
-                        "(for a client that cannot read them)")
-    p.add_argument("--refresh", action="store_true", help="download the access policy again first")
-    p.add_argument("--list", action="store_true", help="show the remembered exports")
-    p.add_argument("--forget", metavar="FORMAT", help="stop keeping an export up to date")
-    p.set_defaults(func=cmd_export)
+    add_export_parser(sub)
 
     for name, text in (("trust", "trust this device (later logins skip SMS)"),
                        ("untrust", "remove this device from the trusted list")):
