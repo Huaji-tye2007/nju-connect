@@ -7,7 +7,7 @@ import subprocess
 import time
 from pathlib import Path
 
-from . import VERSION, paths
+from . import VERSION, clients, paths
 from .config import DEFAULT_SERVER, MARKER, socks_address
 from .policy import all_ports, nodes, routed
 
@@ -85,55 +85,120 @@ def provider_for(entries, clash_path, resolve=DEFAULT_RESOLVE):
     return {"type": "inline", "behavior": "classical", "payload": clash_rules(entries, resolve)}
 
 
-def clash_parts(entries, config, settings, clash_path=None):
-    host, port = socks_address(config)
+PROXY_PROVIDER = "nju-connect"
+# files an installed export keeps up to date, relative to mihomo's home directory
+PROVIDER_FILES = {"nju-vpn": "ruleset/nju-vpn.yaml", "nju-direct": "ruleset/nju-direct.yaml",
+                  PROXY_PROVIDER: "proxies/nju-connect.yaml"}
+
+
+def direct_rules(entries, config):
+    """zju-connect's own connections to the VPN server and nodes, kept out of the proxy."""
+    return ([f"DOMAIN,{config.get('server_address', DEFAULT_SERVER)}"]
+            + [f"IP-CIDR,{n.value},no-resolve" for n in nodes(entries)])
+
+
+def with_target(rule, target):
+    """A provider rule as a config rule: the target goes before a trailing no-resolve."""
+    if rule.endswith(",no-resolve"):
+        return f"{rule[:-len(',no-resolve')]},{target},no-resolve"
+    return f"{rule},{target}"
+
+
+def _group(settings, members):
     e = settings["export"]
-    proxy = {"name": e["proxy_name"], "type": "socks5", "server": host, "port": port, "udp": True}
-    group = {"name": e["group_name"], "type": e["group_type"], "proxies": [e["proxy_name"], "DIRECT"]}
+    group = dict({"name": e["group_name"], "type": e["group_type"]}, **members)
     if e["group_type"] in ("fallback", "url-test"):
         group.update({"url": e["health_url"], "interval": int(e["health_interval"])})
-    # keep zju-connect's own connections to the VPN server and nodes out of the proxy
-    rules = [f"DOMAIN,{config.get('server_address', DEFAULT_SERVER)},DIRECT"]
-    rules += [f"IP-CIDR,{n.value},DIRECT,no-resolve" for n in nodes(entries)]
-    rules.append(f"RULE-SET,nju-vpn,{e['group_name']}")
-    return proxy, group, provider_for(entries, clash_path, resolve_domains(settings)), rules
+    return group
+
+
+def _proxy(config, settings):
+    host, port = socks_address(config)
+    return {"name": settings["export"]["proxy_name"], "type": "socks5", "server": host, "port": port, "udp": True}
+
+
+def direct_proxy_name(settings):
+    return settings["export"]["proxy_name"] + "-DIRECT"
+
+
+def clash_parts(entries, config, settings, clash_path=None):
+    """Self-contained additions: the proxy, a group and the rules (inline unless clash_path
+    is a ruleset file mihomo can read). Anything that changes needs them merged again."""
+    proxy = _proxy(config, settings)
+    group = _group(settings, {"proxies": [proxy["name"], "DIRECT"]})
+    rules = [with_target(rule, "DIRECT") for rule in direct_rules(entries, config)]
+    rules.append(f"RULE-SET,nju-vpn,{group['name']}")
+    return {"proxies": [proxy], "proxy-groups": [group],
+            "rule-providers": {"nju-vpn": provider_for(entries, clash_path, resolve_domains(settings))},
+            "rules": rules}
+
+
+def installed_parts(settings):
+    """Additions that only point at the provider files (PROVIDER_FILES): policy changes and
+    the proxy's port reach mihomo through those files, so these stay the same."""
+    def provider(name):
+        return {"type": "file", "behavior": "classical", "format": "yaml",
+                "path": "./" + PROVIDER_FILES[name], "interval": PROVIDER_INTERVAL}
+    # the direct member lives in the provider too: mihomo puts a group's `proxies` before its
+    # `use` providers, and the fallback group must try zju-connect first
+    group = _group(settings, {"use": [PROXY_PROVIDER]})
+    return {"proxy-providers": {PROXY_PROVIDER: {"type": "file", "path": "./" + PROVIDER_FILES[PROXY_PROVIDER],
+                                                 "interval": PROVIDER_INTERVAL}},
+            "proxy-groups": [group],
+            "rule-providers": {"nju-direct": provider("nju-direct"), "nju-vpn": provider("nju-vpn")},
+            "rules": ["RULE-SET,nju-direct,DIRECT", f"RULE-SET,nju-vpn,{group['name']}"]}
+
+
+def provider_files(entries, config, settings, header):
+    """{relative path: content} of the files behind installed_parts()."""
+    def payload(title, rules):
+        lines = [f"# {line}" for line in header] + [f"# {title}", "payload:"]
+        return "\n".join(lines + [f"  - '{rule}'" for rule in rules]) + "\n"
+    proxies = [_proxy(config, settings), {"name": direct_proxy_name(settings), "type": "direct"}]
+    return {
+        PROVIDER_FILES["nju-vpn"]: payload("NJU resources (through zju-connect)",
+                                           clash_rules(entries, resolve_domains(settings))),
+        PROVIDER_FILES["nju-direct"]: payload("VPN server and nodes (direct)", direct_rules(entries, config)),
+        PROVIDER_FILES[PROXY_PROVIDER]: "\n".join([f"# {line}" for line in header[:1]] + ["proxies:"]
+                                                  + [f"  - {_js(p)}" for p in proxies]) + "\n",
+    }
 
 
 def _js(value):
     return json.dumps(value, ensure_ascii=False)
 
 
-def clash_config(entries, config, settings, clash_path=None):
-    proxy, group, provider, rules = clash_parts(entries, config, settings, clash_path)
-    lines = [f"# {MARKER} {VERSION}; merge into your mihomo config.",
-             "proxies:", f"  - {_js(proxy)}",
-             "proxy-groups:", f"  - {_js(group)}",
-             "rule-providers:", f"  nju-vpn: {_js(provider)}",
-             "rules:  # put these above your other rules"]
-    lines += [f"  - {rule}" for rule in rules]
+def clash_config(parts, intro="merge into your mihomo config."):
+    lines = [f"# {MARKER} {VERSION}; {intro}"]
+    for key in ("proxy-providers", "proxies", "proxy-groups", "rule-providers"):
+        if key not in parts:
+            continue
+        lines.append(f"{key}:")
+        value = parts[key]
+        lines += [f"  {name}: {_js(item)}" for name, item in value.items()] if isinstance(value, dict) \
+            else [f"  - {_js(item)}" for item in value]
+    lines.append("rules:  # put these above your other rules")
+    lines += [f"  - {rule}" for rule in parts["rules"]]
     return "\n".join(lines) + "\n"
 
 
-def clash_verge_script(entries, config, settings, clash_path=None):
-    proxy, group, provider, rules = clash_parts(entries, config, settings, clash_path)
-    return f"""// {MARKER} {VERSION}; regenerate with `nju-connect export clash-verge --install`
-// Proxies NJU resources through zju-connect ({proxy['server']}:{proxy['port']}); the {group['type']}
-// group falls back to DIRECT while zju-connect is not running (e.g. on campus).
+def clash_verge_script(parts, regenerate="nju-connect export clash-verge --install"):
+    group = parts["proxy-groups"][0]
+    return f"""// {MARKER} {VERSION}; regenerate with `{regenerate}`
+// Proxies NJU resources through zju-connect; the {group['type']} group {group['name']} falls back to
+// DIRECT while zju-connect is not reachable.
 function main(config) {{
-  const proxy = {_js(proxy)};
-  const group = {_js(group)};
-  const provider = {_js(provider)};
-  const rules = {_js(rules)};
+  const add = {_js(parts)};
+  for (const key of ["proxies", "proxy-groups"]) {{
+    const names = (add[key] || []).map((item) => item.name);
+    config[key] = (config[key] || []).filter((item) => !names.includes(item.name)).concat(add[key] || []);
+  }}
+  for (const key of ["proxy-providers", "rule-providers"]) {{
+    config[key] = Object.assign(config[key] || {{}}, add[key] || {{}});
+  }}
+  config.rules = add.rules.concat(config.rules || []);
 
-  config.proxies = (config.proxies || []).filter((p) => p.name !== proxy.name);
-  config.proxies.push(proxy);
-  config["proxy-groups"] = (config["proxy-groups"] || []).filter((g) => g.name !== group.name);
-  config["proxy-groups"].push(group);
-  config["rule-providers"] = config["rule-providers"] || {{}};
-  config["rule-providers"]["nju-vpn"] = provider;
-  config.rules = rules.concat(config.rules || []);
-
-  console.log("nju-connect: injected " + proxy.name + ", group " + group.name + " and ruleset nju-vpn");
+  console.log("nju-connect: injected group {group['name']} and its rules");
   return config;
 }}
 """
@@ -157,23 +222,17 @@ def verge_processes(only_exe=None):
     a real Clash Verge).
     """
     found = []
-    for entry in Path("/proc").iterdir():
-        if not entry.name.isdigit():
+    for proc in clients.processes(lambda name: name == "clash-verge"):
+        if proc.uid != os.getuid() or Path(proc.exe).name != "clash-verge" \
+                or (only_exe and proc.exe != str(only_exe)):
             continue
         try:
-            if entry.stat().st_uid != os.getuid():
-                continue
-            exe = os.readlink(entry / "exe").replace(" (deleted)", "")
-            if Path(exe).name != "clash-verge" or (only_exe and exe != str(only_exe)):
-                continue
-            if not _alive(int(entry.name)):
-                continue
-            argv = [a.decode() for a in (entry / "cmdline").read_bytes().split(b"\0") if a]
             environ = dict(item.decode(errors="replace").split("=", 1)
-                           for item in (entry / "environ").read_bytes().split(b"\0") if b"=" in item)
+                           for item in (Path("/proc") / str(proc.pid) / "environ").read_bytes().split(b"\0")
+                           if b"=" in item)
         except OSError:
             continue
-        found.append((int(entry.name), exe, argv, environ))
+        found.append((proc.pid, proc.exe, proc.argv, environ))
     return found
 
 

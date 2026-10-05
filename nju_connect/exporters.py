@@ -6,11 +6,11 @@ import sys
 from datetime import datetime
 from pathlib import Path
 
-from . import DOCS_URL, VERSION, clash, xray
+from . import DOCS_URL, VERSION, clash, clients, paths, singbox, xray
 from .config import DEFAULT_HTTP_PORT, DEFAULT_SERVER, MARKER, bind_port, load_config, load_settings, \
     save_settings, socks_address
 from .policy import all_ports, load_policy, nodes, routed
-from .util import ask_yes, die, notify, write_atomic
+from .util import ask_yes, die, log, notify, styler, write_atomic
 
 
 def _header(entries, skipped, config):
@@ -31,42 +31,16 @@ def render_clash(entries, skipped, config, settings, exports):
 
 
 def render_clash_config(entries, skipped, config, settings, exports):
-    return clash.clash_config(entries, config, settings, exports.get("clash"))
+    return clash.clash_config(clash.clash_parts(entries, config, settings, exports.get("clash")))
 
 
 def render_clash_verge(entries, skipped, config, settings, exports):
-    return clash.clash_verge_script(entries, config, settings, exports.get("clash"))
-
-
-def _sing_box_rules(entries):
-    """Headless rules; domain and IP rules kept apart, since sing-box ANDs the domain
-    and IP categories inside one rule."""
-    groups = {}
-    for e in routed(entries):
-        category = "ip" if e.kind == "cidr" else "domain"
-        key = (category, e.ports, e.network)
-        rule = groups.setdefault(key, {})
-        if e.kind == "domain":
-            rule.setdefault("domain", []).append(e.value)
-        elif e.kind == "subdomains":
-            rule.setdefault("domain_regex", []).append(xray.subdomain_regex(e.value))
-        else:
-            rule.setdefault("ip_cidr", []).append(e.value)
-        if not all_ports(e):
-            singles = [lo for lo, hi in e.ports if lo == hi]
-            ranges = [f"{lo}:{hi}" for lo, hi in e.ports if lo != hi]
-            if singles:
-                rule["port"] = singles
-            if ranges:
-                rule["port_range"] = ranges
-        if e.network:
-            rule["network"] = e.network
-    return list(groups.values())
+    return clash.clash_verge_script(clash.clash_parts(entries, config, settings, exports.get("clash")))
 
 
 def render_sing_box(entries, skipped, config, settings, exports):
     """sing-box rule-set source (version 1)."""
-    return json.dumps({"version": 1, "rules": _sing_box_rules(entries)}, ensure_ascii=False, indent=2) + "\n"
+    return singbox.rule_set_source(singbox.policy_rules(entries))
 
 
 def render_sing_box_config(entries, skipped, config, settings, exports):
@@ -81,7 +55,7 @@ def render_sing_box_config(entries, skipped, config, settings, exports):
     if "sing-box" in exports:
         rule_set = {"type": "local", "tag": "nju-vpn", "format": "source", "path": exports["sing-box"]}
     else:
-        rule_set = {"type": "inline", "tag": "nju-vpn", "rules": _sing_box_rules(entries)}
+        rule_set = {"type": "inline", "tag": "nju-vpn", "rules": singbox.policy_rules(entries)}
     server = config.get("server_address", DEFAULT_SERVER)
     rules = [{"domain": [server], "outbound": "direct"}]
     node_ips = [n.value for n in nodes(entries)]
@@ -202,11 +176,11 @@ def render_list(entries, skipped, config, settings, exports):
 
 FORMATS = {
     "clash": (render_clash, "mihomo/Clash Meta rule-provider (YAML, classical)"),
-    "clash-config": (render_clash_config, "mihomo config snippet: proxy, group, rule-provider, rules"),
-    "clash-verge": (render_clash_verge, "Clash Verge Rev global script (use --install)"),
+    "clash-config": (render_clash_config, "mihomo config snippet (--install: kept-up-to-date files in mihomo's folder)"),
+    "clash-verge": (render_clash_verge, "Clash Verge Rev global script (--install: into Clash Verge Rev)"),
     "sing-box": (render_sing_box, "sing-box rule-set source (JSON)"),
-    "sing-box-config": (render_sing_box_config, "sing-box outbound and route rules to merge (JSON, 1.11+)"),
-    "xray": (render_xray, "Xray outbound and routing rules (JSON; --install merges them into your config)"),
+    "sing-box-config": (render_sing_box_config, "sing-box outbound and route rules (1.11+; --install merges them into the config)"),
+    "xray": (render_xray, "Xray outbound and routing rules (--install merges them into the config)"),
     "v2rayn": (render_v2rayn, "v2rayN routing rules to import (JSON list, NJU rules first)"),
     "pac": (render_pac, "PAC file for browsers / system proxy settings"),
     "list": (render_list, "plain list of destinations, ports and protocols"),
@@ -220,13 +194,13 @@ def remembered(settings=None):
     return dict(settings["exports"])
 
 
-INLINE = "inline:"   # prefix of a remembered path whose export embeds the rules
-MERGE = "merge:"     # prefix of a remembered Xray config the rules are merged into
+INLINE = "inline:"     # prefix of a remembered path whose export embeds the rules
+INSTALL = "install:"   # prefix of a remembered --install target (a client's config or folder)
 
 
 def split_mode(value):
-    """A remembered value -> (INLINE, MERGE or "", path)."""
-    for mode in (INLINE, MERGE):
+    """A remembered value -> (INLINE, INSTALL or "", path)."""
+    for mode in (INLINE, INSTALL):
         if value.startswith(mode):
             return mode, value[len(mode):]
     return "", value
@@ -251,14 +225,14 @@ def render(name, entries=None, skipped=None, refresh=False, inline=False):
     return FORMATS[name][0](entries, skipped or {}, load_config(), load_settings(), exports)
 
 
-def write_file(path, content):
-    """Write an export; a file that nju-connect did not generate is backed up first."""
+def write_file(path, content, ours=False):
+    """Write an export; a file nju-connect did not generate (no MARKER, not `ours`) is backed up first."""
     path = Path(path).expanduser()
     if path.exists():
         old = path.read_text(errors="replace")
         if old == content:
             return False
-        if MARKER not in old[:300]:
+        if not ours and MARKER not in old[:300]:
             backup = path.with_name(f"{path.name}.bak-{datetime.now():%Y%m%d-%H%M%S}")
             shutil.copy2(path, backup)
             print(f"Backed up {path} -> {backup}")
@@ -281,24 +255,17 @@ def forget(name):
 
 def export(name, output=None, refresh=False, install=False, inline=False):
     entries, skipped = load_policy(refresh)
-    if install and name == "xray":
-        install_xray(entries, output)
-        return
     if install:
-        if name != "clash-verge":
-            die("--install is only for clash-verge and xray; use -o PATH for other formats")
-        target = output or clash.verge_script_path()
-        if not target:
-            die("Clash Verge Rev not found; use -o PATH to write the script somewhere else")
-        # the script loads the rules from a rule-provider file inside Verge's directory,
-        # which must be (re)written together with it
-        exports = remembered_paths()
-        ruleset = exports.get("clash") or clash.verge_ruleset_path()
-        changed = write_file(ruleset, render("clash", entries, skipped))
-        if "clash" not in exports:
-            remember("clash", ruleset)
-        print(f"{'Wrote' if changed else 'Unchanged:'} {ruleset} (the clash export the script uses)")
-        output = target
+        installer = INSTALLERS.get(name)
+        if not installer:
+            die(f"--install works with {', '.join(INSTALLERS)}; use -o PATH for other formats")
+        try:
+            target = installer.target(output)
+            installer.apply(target, entries, skipped, interactive=True)
+        except RuntimeError as e:
+            die(str(e))
+        remember(name, target, INSTALL)
+        return
     if output is None:
         print(render(name, entries, skipped, inline=inline), end="")
         return
@@ -306,8 +273,6 @@ def export(name, output=None, refresh=False, install=False, inline=False):
     remember(name, output, INLINE if inline else "")
     print(f"{'Wrote' if changed else 'Unchanged:'} {Path(output).expanduser()} "
           f"({len(entries)} entries); it will be kept up to date")
-    if install and changed:
-        apply_verge_script()
     if name == "v2rayn":
         print(v2rayn_steps(output))
 
@@ -332,33 +297,17 @@ def v2rayn_steps(output):
     return "\n".join(lines)
 
 
-def install_xray(entries, output):
-    target = output or xray.default_config()
-    if not target:
-        die("no Xray config found in " + ", ".join(map(str, xray.XRAY_CONFIGS)) + "; use -o PATH")
-    try:
-        changed = xray.merge_file(target, entries, load_config(), load_settings())
-    except RuntimeError as e:
-        die(str(e))
-    remember("xray", target, MERGE)
-    target = Path(target).expanduser()
-    if not changed:
-        print(f"Unchanged: {target} already has the current NJU rules; they will be kept up to date")
-        return
-    print(f"Merged the NJU outbound and {len(entries)} entries into {target}; they will be kept up to date")
-    confirm = (lambda prompt: ask_yes(prompt, default=True)) if sys.stdin.isatty() else None
-    restarted, message = xray.restart_xray(confirm)
-    print(message if restarted else message[0].upper() + message[1:])
-
-
-def apply_verge_script():
+def apply_verge_script(interactive=True):
     """Clash Verge Rev only runs the global script when it rebuilds its configuration,
     which it does on start or when you change something in its GUI, not when the file
     changes. Offer to restart it."""
+    hint = "restart Clash Verge Rev (or open the global script in its GUI and save it) to apply it"
+    if not interactive:
+        notify(f"The nju-connect script for Clash Verge Rev changed; {hint}")
+        return
     if not clash.verge_processes():
         print("Clash Verge Rev will load the script the next time it starts")
         return
-    hint = "restart Clash Verge Rev (or open the global script in its GUI and save it) to apply it"
     if not sys.stdin.isatty():
         print(f"To load the new script, {hint}")
     elif ask_yes("Clash Verge Rev loads the script only when it rebuilds its configuration. "
@@ -369,6 +318,179 @@ def apply_verge_script():
         print(f"Not restarted; {hint}")
 
 
+# ------------------------------------------------------------------ --install
+
+class Installer:
+    """Puts the NJU rules into one client and keeps them there (export FORMAT --install)."""
+
+    def target(self, output):
+        """The file or folder to install into (output: the user's -o)."""
+        raise NotImplementedError
+
+    def apply(self, target, entries, skipped, interactive):
+        """Install or refresh; True if a file changed. RuntimeError with the reason on failure."""
+        raise NotImplementedError
+
+
+def _reload(core, target, interactive):
+    """Make a core load its changed config, asking first when run from a terminal."""
+    confirm = (lambda prompt: ask_yes(prompt, default=True)) if interactive and sys.stdin.isatty() else None
+    done, message = clients.reload(core, target, confirm)
+    if interactive:
+        print(message if done else message[0].upper() + message[1:])
+    elif not done:
+        notify(f"The NJU rules in {target} changed; {message}")
+
+
+def _provider_files(home, entries, skipped):
+    """Write the mihomo provider files under home; True if any changed."""
+    config, settings = load_config(), load_settings()
+    files = clash.provider_files(entries, config, settings, _header(entries, skipped, config))
+    changed = False
+    for relative, content in files.items():
+        changed = write_file(Path(home) / relative, content) or changed
+    return changed
+
+
+class VergeInstaller(Installer):
+    def target(self, output):
+        target = output or clash.verge_script_path()
+        if not target:
+            raise RuntimeError("Clash Verge Rev not found; use -o PATH to write the script somewhere else")
+        clients.require_writable(paths.VERGE_DIR)
+        return Path(target).expanduser()
+
+    def apply(self, target, entries, skipped, interactive):
+        files = _provider_files(paths.VERGE_DIR, entries, skipped)
+        script = clash.clash_verge_script(clash.installed_parts(load_settings()))
+        changed = write_file(target, script)
+        if interactive:
+            print(f"{'Wrote' if changed else 'Unchanged:'} {target}, and its rule and proxy files in "
+                  f"{paths.VERGE_DIR}; they will be kept up to date")
+        if changed:
+            apply_verge_script(interactive)
+        return files or changed
+
+
+class MihomoInstaller(Installer):
+    def target(self, output):
+        home = clients.choose_config("mihomo", output)
+        if home.suffix in (".yaml", ".yml") or home.is_file():
+            home = home.parent   # given config.yaml: the provider paths are relative to its folder
+        clients.require_writable(home)
+        return home
+
+    def apply(self, target, entries, skipped, interactive):
+        changed = _provider_files(target, entries, skipped)
+        snippet = clash.clash_config(clash.installed_parts(load_settings()), intro="merge into config.yaml once.")
+        shown = _shown_snippets()
+        last = shown.get(str(target))
+        if interactive:
+            print(mihomo_steps(target, snippet, same=last == snippet))
+        elif last not in (None, snippet):
+            # names or group settings changed: only the user can update config.yaml
+            notify(f"The nju-connect part of {target}/config.yaml changed; run "
+                   "`nju-connect export clash-config --install` and merge it again")
+            return changed
+        if last != snippet:
+            shown[str(target)] = snippet
+            write_atomic(SNIPPETS, json.dumps(shown, ensure_ascii=False, indent=2) + "\n", 0o644)
+        return changed
+
+
+class SingBoxInstaller(Installer):
+    def target(self, output):
+        target = clients.choose_config("sing-box", output)
+        clients.require_writable(target)
+        return target
+
+    def apply(self, target, entries, skipped, interactive):
+        changed, warnings = singbox.merge_file(target, entries, load_config(), load_settings())
+        for warning in warnings:
+            if interactive:
+                print(f"Warning: {warning}")
+            else:
+                log(f"warning: {warning}")
+        if interactive:
+            print(f"{'Merged the NJU outbound and rules into' if changed else 'Unchanged:'} {target}; "
+                  f"its rule sets in {Path(target).parent / singbox.FILES_DIR} will be kept up to date")
+        if changed:
+            _reload("sing-box", target, interactive)
+        return changed
+
+
+class XrayInstaller(Installer):
+    def target(self, output):
+        target = clients.choose_config("xray", output)
+        clients.require_writable(target)
+        return target
+
+    def apply(self, target, entries, skipped, interactive):
+        changed = xray.merge_file(target, entries, load_config(), load_settings())
+        if interactive:
+            print(f"{'Merged the NJU outbound and rules into' if changed else 'Unchanged:'} {target}; "
+                  "they will be kept up to date")
+        if changed:
+            _reload("xray", target, interactive)
+        return changed
+
+
+INSTALLERS = {"clash-verge": VergeInstaller(), "clash-config": MihomoInstaller(),
+              "sing-box-config": SingBoxInstaller(), "xray": XrayInstaller()}
+
+SNIPPETS = paths.STATE_DIR / "mihomo-snippets.json"   # the merge snippet last shown, per mihomo folder
+
+
+def _shown_snippets():
+    try:
+        return json.loads(SNIPPETS.read_text())
+    except (OSError, ValueError):
+        return {}
+
+
+def mihomo_steps(home, snippet, same=False):
+    """What to merge into mihomo's config.yaml, once, as numbered steps."""
+    paint = styler()
+    sections, current = {}, None
+    for line in snippet.splitlines()[1:]:
+        if not line.startswith(" "):
+            current = line.split(":")[0]
+            sections[current] = []
+        else:
+            sections[current].append(line.strip())
+    rule = "─" * 64
+    out = [paint(f"nju-connect: mihomo set up in {home}", "1;34"), rule,
+           paint("✓", "1;32") + " Written, kept up to date by the service (mihomo reloads them by itself):"]
+    for path, what in ((clash.PROVIDER_FILES["nju-vpn"], "NJU resources"),
+                       (clash.PROVIDER_FILES["nju-direct"], "VPN server and nodes (must stay direct)"),
+                       (clash.PROVIDER_FILES[clash.PROXY_PROVIDER], "NJUConnect and its direct fallback")):
+        out.append(f"    {paint(path.ljust(26), '32')}{paint(what, '2')}")
+    out += ["", paint(f"── Merge into {Path(home) / 'config.yaml'} once ", "1;34")]
+    if same:
+        out.append(paint("   The same as last time: skip it if you have merged it already.", "2"))
+    steps = (("proxy-providers", "(create the key if it is missing)"), ("proxy-groups", ""),
+             ("rule-providers", ""), ("rules", "← before all your other rules"))
+    for number, (key, note) in zip("①②③④", steps):
+        if key == "rules":
+            head = paint("At the TOP of rules:", "1;33") + "  " + paint(note, "1;33")
+        else:
+            head = f"Under {paint(key, '32')}:" + (f"  {paint(note, '2')}" if note else "")
+        out.append(f"{number} {head}")
+        out += [f"    {line.split('  #')[0]}" for line in sections[key]]
+        out.append("")
+    out += ["Then reload mihomo once (restart it, or PUT /configs through its API).", rule,
+            "· Policy changes and proxy.socks_port: applied automatically, nothing to redo.",
+            "· export.proxy_name / group_name / group_type / health_*: run this command again",
+            "  and update ② and ④ (the service notifies you when that is needed).",
+            f"· Details: {DOCS_URL}#原生-mihomo--自己维护的-configyaml"]
+    return "\n".join(out)
+
+
+# ------------------------------------------------- keeping remembered exports up to date
+
+MANUAL_IMPORT = ("v2rayn",)   # exports a client only reads when the user imports them again
+
+
 def refresh_exports(entries=None, skipped=None, quiet=False):
     """Regenerate every remembered export; returns the number of files rewritten."""
     exports = remembered()
@@ -377,37 +499,26 @@ def refresh_exports(entries=None, skipped=None, quiet=False):
     if entries is None:
         entries, skipped = load_policy()
     changed = 0
-    # the clash rule-provider first: the clash-verge/clash-config exports point at it
+    # the clash/sing-box rule files first: clash-config and sing-box-config may point at them
     for name in sorted(exports, key=lambda n: n not in ("clash", "sing-box")):
         if name not in FORMATS:
             continue
         mode, path = split_mode(exports[name])
-        if mode == MERGE:
-            if not refresh_merged(path, entries, quiet):
+        if mode == INSTALL:
+            try:
+                if name not in INSTALLERS or not INSTALLERS[name].apply(Path(path), entries, skipped,
+                                                                         interactive=False):
+                    continue
+            except RuntimeError as e:
+                notify(f"Could not update the NJU rules for {name} in {path}: {e}")
                 continue
-        elif not write_file(path, render(name, entries, skipped, inline=mode == INLINE)):
+        elif not write_file(path, render(name, entries, skipped, inline=mode == INLINE), ours=True):
             continue
         changed += 1
         if not quiet:
-            print(f"Updated {path} ({name})")
+            again = "; import it again in your client" if mode == INLINE or name in MANUAL_IMPORT else ""
+            print(f"Updated {path} ({name}){again}")
     return changed
-
-
-def refresh_merged(path, entries, quiet):
-    """Merge the new rules into a remembered Xray config and restart Xray if possible."""
-    try:
-        if not xray.merge_file(path, entries, load_config(), load_settings()):
-            return False
-    except RuntimeError as e:
-        notify(f"Could not update the NJU rules in {path}: {e}")
-        return False
-    restarted, message = xray.restart_xray()
-    if restarted:
-        if not quiet:
-            print(message)
-    else:
-        notify(f"The NJU access policy changed and {path} was updated; {message}")
-    return True
 
 
 def list_exports():
@@ -419,5 +530,5 @@ def list_exports():
         p = Path(path)
         age = f"updated {(datetime.now().timestamp() - p.stat().st_mtime) / 3600:.1f}h ago" \
             if p.exists() else "missing"
-        note = {INLINE: ", rules inline", MERGE: ", merged into this Xray config"}.get(mode, "")
+        note = {INLINE: ", rules inline", INSTALL: ", installed"}.get(mode, "")
         print(f"{name:<16} {path}  ({age}{note})")

@@ -11,7 +11,7 @@ from . import INSTALL_URL, VERSION, __doc__ as PACKAGE_DOC, configure, direct, e
 from .config import DEFAULT_HTTP_PORT, DEFAULT_SERVER, bind_port, load_config, load_settings, socks_address
 from .daemon import run_daemon
 from .network import campus_servers_with_source, on_campus, port_in_use, running_instances, vpn_healthy
-from .util import die
+from .util import can_color, die
 from .zju import untrust_device
 
 SERVICE_ACTIONS = {
@@ -152,18 +152,8 @@ def cmd_uninstall(args):
         print(f"Kept {paths.CONFIG_DIR} and {paths.STATE_DIR} (use --purge to remove them)")
 
 
-def _can_color():
-    """Same decision argparse makes for its own colors (NO_COLOR, FORCE_COLOR, TERM, a tty)."""
-    try:
-        from _colorize import can_colorize   # Python 3.13+
-        return can_colorize(file=sys.stdout)
-    except (ImportError, TypeError):
-        return (sys.stdout.isatty() and "NO_COLOR" not in os.environ
-                and os.environ.get("TERM") != "dumb")
-
-
 def export_epilog():
-    color = _can_color()
+    color = can_color()
 
     def c(text, code):   # argparse's palette: headings blue, names green, options cyan
         return f"\033[{code}m{text}\033[0m" if color else text
@@ -173,14 +163,12 @@ def export_epilog():
     lines += [f"  {c(f'{fmt:<16}', name)}{desc}" for fmt, (_, desc) in exporters.FORMATS.items()]
     lines += ["", c("examples:", heading)]
     examples = [
-        ("Clash Verge Rev: global script, plus the ruleset it loads", "clash-verge", "--install", ""),
-        ("other mihomo clients: a rule-provider file inside mihomo's directory",
-         "clash", "-o", "~/.config/mihomo/ruleset/nju-vpn.yaml"),
-        ("sing-box: rule-set file, then merge the printed outbound and route rules",
-         "sing-box", "-o", "~/nju-vpn.json"),
-        ("", "sing-box-config", "", ""),
-        ("Xray: merge the outbound and routing rules into your config and restart Xray",
-         "xray", "--install", "-o ~/.config/xray/config.json"),
+        ("Clash Verge Rev: global script and the rule and proxy files it loads", "clash-verge", "--install", ""),
+        ("mihomo: rule and proxy files in its folder, then merge the printed part into config.yaml once",
+         "clash-config", "--install", ""),
+        ("sing-box: merge the outbound, rule sets and rules into its config, then reload it",
+         "sing-box-config", "--install", ""),
+        ("Xray: merge the outbound and routing rules into its config, then restart it", "xray", "--install", ""),
         ("v2rayN: a rules file to import in its routing settings (prints the steps)",
          "v2rayn", "-o", "~/nju-v2rayn.json"),
         ("browsers / system proxy: use file:///home/<you>/nju.pac as the proxy URL", "pac", "-o", "~/nju.pac"),
@@ -190,7 +178,9 @@ def export_epilog():
             lines.append(f"  # {note}")
         lines.append("  " + " ".join(x for x in (c("nju-connect", prog), "export", c(fmt, name),
                                                 c(flag, option) if flag else "", path) if x))
-    lines += ["", f"Files written with {c('-o', option)} are remembered and kept up to date by the service;",
+    lines += ["", f"{c('--install', option)} finds the client's config from its running process (or the usual",
+              f"places); {c('-o', option)} chooses another. Installs and files written with {c('-o', option)} are",
+              "remembered and kept up to date by the service;",
               f"see them with {c('--list', option)}, stop with {c('--forget', option)} FORMAT."]
     return "\n".join(lines)
 
@@ -234,8 +224,9 @@ def build_parser():
     p.add_argument("format", nargs="?", choices=tuple(exporters.FORMATS), metavar="FORMAT")
     p.add_argument("-o", "--output", help="write to this file and keep it up to date")
     p.add_argument("--install", action="store_true",
-                   help="clash-verge: write Clash Verge Rev's global script; xray: merge into your Xray "
-                        "config (-o PATH, or the one found) and restart Xray")
+                   help="set the client up and keep it up to date: clash-verge (global script), "
+                        "clash-config (files in mihomo's folder), sing-box-config and xray (merged into "
+                        "the config); -o chooses the script, folder or config")
     p.add_argument("--inline", action="store_true",
                    help="embed the rules instead of referencing the clash/sing-box export files "
                         "(for a client that cannot read them)")

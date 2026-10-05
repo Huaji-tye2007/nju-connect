@@ -6,7 +6,7 @@ import unittest
 from pathlib import Path
 from unittest import mock
 
-from nju_connect import exporters, xray
+from nju_connect import clients, exporters, util, xray
 from tests.test_policy_and_exports import ExportFixture
 
 # the fields of v2rayN's RulesItem (ServiceLib/Models/Entities/RulesItem.cs)
@@ -29,7 +29,7 @@ USER_CONFIG = """{
 
 
 def without_comments(text):
-    return json.loads(xray.strip_comments(text))
+    return json.loads(util.strip_json_comments(text))
 
 
 class V2raynTest(ExportFixture):
@@ -110,9 +110,9 @@ class XrayMergeTest(ExportFixture):
         self.conf = self.tmp / "config.json"
         self.conf.write_text(USER_CONFIG)
         os.chmod(self.conf, 0o640)
-        # never run a real xray or touch a real service
-        for name, value in (("xray_binary", None), ("xray_units", [])):
-            patcher = mock.patch.object(xray, name, return_value=value)
+        # never run a real xray or touch a running one
+        for target, name, value in ((xray, "xray_binary", None), (clients, "running", [])):
+            patcher = mock.patch.object(target, name, return_value=value)
             patcher.start()
             self.addCleanup(patcher.stop)
 
@@ -135,7 +135,7 @@ class XrayMergeTest(ExportFixture):
         self.assertEqual(data["log"]["note"], "http://example.com/*x*/")
         self.assertEqual(stat.S_IMODE(self.conf.stat().st_mode), 0o640)
         self.assertEqual(len(list(self.tmp.glob("config.json.bak-*"))), 1)
-        self.assertEqual(exporters.remembered(), {"xray": exporters.MERGE + str(self.conf.resolve())})
+        self.assertEqual(exporters.remembered(), {"xray": exporters.INSTALL + str(self.conf.resolve())})
 
     def test_merging_again_is_idempotent(self):
         self.install()
@@ -150,15 +150,16 @@ class XrayMergeTest(ExportFixture):
         data = json.loads(self.conf.read_text())
         data["routing"]["rules"][0]["domain"] = ["full:stale.example.com"]
         self.conf.write_text(json.dumps(data))
-        with mock.patch.object(xray, "restart_xray", return_value=(True, "Restarted xray.service")) as restart:
+        with mock.patch.object(clients, "reload", return_value=(True, "Reloaded xray.service")) as reload:
             self.assertEqual(exporters.refresh_exports(quiet=True), 1)
-        restart.assert_called_once_with()
+        reload.assert_called_once_with("xray", self.conf.resolve(), None)   # no prompt in the background
         text = self.conf.read_text()
         self.assertNotIn("stale.example.com", text)
         self.assertEqual(text.count('"ruleTag": "nju-connect"'), count)
 
     def test_rejected_config_is_left_unchanged(self):
-        with mock.patch.object(xray, "check_config", side_effect=RuntimeError("xray rejected it")), \
+        with mock.patch.object(xray, "xray_binary", return_value="xray"), \
+                mock.patch.object(xray, "check_with", side_effect=RuntimeError("xray rejected it")), \
                 mock.patch("builtins.print"), self.assertRaises(SystemExit):
             exporters.export("xray", self.conf, install=True)
         self.assertEqual(self.conf.read_text(), USER_CONFIG)
@@ -176,27 +177,7 @@ class XrayMergeTest(ExportFixture):
         with self.assertRaisesRegex(RuntimeError, "no outbounds"):
             xray.merge_file(self.conf, [], {}, {"export": {"proxy_name": "NJUConnect"}})
 
-    def test_restart_only_user_services(self):
-        units = [("user", "xray.service"), ("system", "xray@main.service")]
-        env = {k: v for k, v in os.environ.items() if k != "NJU_CONNECT_CONFIG_DIR"}
-        with mock.patch.dict(os.environ, env, clear=True), \
-                mock.patch.object(xray, "xray_units", return_value=units), \
-                mock.patch.object(xray.subprocess, "run") as run:
-            self.assertEqual(xray.restart_xray(), (True, "Restarted xray.service"))
-            run.assert_called_once_with(["systemctl", "--user", "restart", "xray.service"], timeout=60)
-            run.reset_mock()
-            restarted, message = xray.restart_xray(confirm=lambda prompt: False)
-        run.assert_not_called()
-        self.assertFalse(restarted)
-        self.assertIn("sudo systemctl restart xray@main.service", message)
-
-    def test_sandbox_never_restarts(self):
-        with mock.patch.object(xray.subprocess, "run") as run:
-            self.assertFalse(xray.restart_xray()[0])
-        run.assert_not_called()
-
-
 class StripCommentsTest(unittest.TestCase):
     def test_strip_comments(self):
         text = '{"a": "x // y", # hash comment\n "b": /* c */ "\\"/*"}'
-        self.assertEqual(json.loads(xray.strip_comments(text)), {"a": "x // y", "b": '"/*'})
+        self.assertEqual(json.loads(util.strip_json_comments(text)), {"a": "x // y", "b": '"/*'})

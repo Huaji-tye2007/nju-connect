@@ -6,7 +6,7 @@ import struct
 import sys
 from pathlib import Path
 
-from . import direct, paths
+from . import clients, direct, paths
 from .config import DEFAULT_HTTP_PORT, DEFAULT_SOCKS_PORT, bind_port
 from .util import die
 
@@ -100,32 +100,15 @@ def vpn_healthy(settings, socks):
 def running_instances(exclude_pid=None):
     """Running zju-connect processes as (pid, executable, owner, in_service)."""
     found = []
-    for entry in Path("/proc").iterdir():
-        if not entry.name.isdigit() or int(entry.name) == exclude_pid:
+    for proc in clients.processes(lambda name: name == "zju-connect"):
+        if proc.pid == exclude_pid:
             continue
-        try:
-            if (entry / "comm").read_text().strip() != "zju-connect":
-                continue
-            # field 3 of /proc/PID/stat is the state; Z = exited, waiting to be reaped
-            if (entry / "stat").read_text().rsplit(")", 1)[1].split()[0] == "Z":
-                continue
-            uid = entry.stat().st_uid
-        except OSError:
-            continue
-        try:
-            exe = os.readlink(entry / "exe")
-        except OSError:
-            exe = "?"
-        try:
-            in_service = paths.UNIT_NAME in (entry / "cgroup").read_text()
-        except OSError:
-            in_service = False
         try:
             import pwd
-            owner = pwd.getpwuid(uid).pw_name
+            owner = pwd.getpwuid(proc.uid).pw_name
         except (ImportError, KeyError):
-            owner = str(uid)
-        found.append((int(entry.name), exe, owner, in_service))
+            owner = str(proc.uid)
+        found.append((proc.pid, proc.exe or "?", owner, bool(proc.unit) and proc.unit[1] == paths.UNIT_NAME))
     return found
 
 

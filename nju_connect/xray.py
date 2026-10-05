@@ -4,9 +4,6 @@ import json
 import os
 import shutil
 import sqlite3
-import subprocess
-import tempfile
-from datetime import datetime
 from pathlib import Path
 from urllib.parse import quote
 
@@ -14,14 +11,10 @@ from . import VERSION, paths
 from .clash import resolve_domains
 from .config import DEFAULT_SERVER, MARKER, socks_address
 from .policy import all_ports, nodes, routed
-from .util import write_atomic
+from .util import check_with, read_json_config, replace_config
 
 TAG = "nju-connect"              # ruleTag of the rules merged into an Xray config
 REMARK = TAG + ":"               # prefix of the remarks of the rules imported into v2rayN
-
-# where Xray's install script and distribution packages put the config
-XRAY_CONFIGS = [paths.XDG_CONFIG / "xray/config.json", Path("/usr/local/etc/xray/config.json"),
-                Path("/etc/xray/config.json")]
 
 
 def subdomain_regex(domain):
@@ -176,33 +169,6 @@ def render_v2rayn(entries, config, settings):
 
 # ------------------------------------------------------- merging into Xray
 
-def strip_comments(text):
-    """JSON with // and /* */ comments (Xray accepts them) -> plain JSON."""
-    out, i, n = [], 0, len(text)
-    while i < n:
-        c = text[i]
-        if c == '"':
-            j = i + 1
-            while j < n and text[j] != '"':
-                j += 2 if text[j] == "\\" else 1
-            out.append(text[i:j + 1])
-            i = j + 1
-        elif text.startswith("//", i) or text.startswith("#", i):
-            while i < n and text[i] != "\n":
-                i += 1
-        elif text.startswith("/*", i):
-            end = text.find("*/", i + 2)
-            i = n if end < 0 else end + 2
-        else:
-            out.append(c)
-            i += 1
-    return "".join(out)
-
-
-def default_config():
-    return next((p for p in XRAY_CONFIGS if p.is_file()), None)
-
-
 def merge_config(data, entries, config, settings):
     """A copy of an Xray config with our outbound and rules; merging again replaces them."""
     tag = settings["export"]["proxy_name"]
@@ -228,92 +194,20 @@ def xray_binary():
     return None
 
 
-def check_config(content):
-    """Run `xray run -test` on the merged config when xray is installed; raises on failure."""
-    binary = xray_binary()
-    if not binary:
-        return False
-    fd, tmp = tempfile.mkstemp(prefix="nju-connect-xray-", suffix=".json")
-    try:
-        with os.fdopen(fd, "w") as f:
-            f.write(content)
-        result = subprocess.run([binary, "run", "-test", "-c", tmp], stdin=subprocess.DEVNULL,
-                                stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, timeout=60)
-    finally:
-        os.unlink(tmp)
-    if result.returncode != 0:
-        tail = "\n".join(result.stdout.strip().splitlines()[-5:])
-        raise RuntimeError(f"xray rejected the merged config, left unchanged:\n{tail}")
-    return True
-
-
 def merge_file(path, entries, config, settings):
     """Merge the NJU outbound and rules into the Xray config at path; True if it changed."""
     path = Path(path).expanduser()
     if path.parent.name == "binConfigs" and (path.parent.parent / "guiConfigs").is_dir():
         raise RuntimeError(f"{path} is rewritten by v2rayN; use `nju-connect export v2rayn` for v2rayN")
-    try:
-        text = path.read_text()
-    except OSError as e:
-        raise RuntimeError(f"cannot read the Xray config {path}: {e.strerror}")
-    try:
-        data = json.loads(strip_comments(text))
-    except ValueError as e:
-        raise RuntimeError(f"{path} is not a JSON Xray config: {e}")
-    if not isinstance(data, dict) or not data.get("outbounds"):
+    text, data = read_json_config(path, "Xray")
+    if not data.get("outbounds"):
         raise RuntimeError(f"{path} has no outbounds; point -o at the Xray config you run")
     first = not any(isinstance(r, dict) and r.get("ruleTag") == TAG
                     for r in (data.get("routing") or {}).get("rules") or [])
     content = json.dumps(merge_config(data, entries, config, settings), ensure_ascii=False, indent=2) + "\n"
     if content == text:
         return False
-    check_config(content)
-    if first:
-        backup = path.with_name(f"{path.name}.bak-{datetime.now():%Y%m%d-%H%M%S}")
-        shutil.copy2(path, backup)
-        print(f"Backed up {path} -> {backup} (comments are not kept in the merged file)")
-    try:
-        write_atomic(path, content, path.stat().st_mode & 0o7777)
-    except OSError as e:
-        raise RuntimeError(f"cannot write {path}: {e.strerror}")
+    if xray_binary():
+        check_with(xray_binary(), ["run", "-test", "-c"], content, "xray")
+    replace_config(path, content, backup=first)
     return True
-
-
-# ---------------------------------------------------------- restarting Xray
-
-def xray_units():
-    """Active systemd services whose name starts with xray, as (scope, unit)."""
-    if not shutil.which("systemctl"):
-        return []
-    found = []
-    for scope in ("user", "system"):
-        args = ["systemctl"] + (["--user"] if scope == "user" else []) + [
-            "list-units", "--type=service", "--state=active", "--plain", "--no-legend", "xray*.service"]
-        try:
-            out = subprocess.run(args, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, text=True,
-                                 timeout=10).stdout
-        except (OSError, subprocess.SubprocessError):
-            continue
-        found += [(scope, line.split()[0]) for line in out.splitlines() if line.strip()]
-    return found
-
-
-def restart_xray(confirm=None):
-    """Restart the Xray user services so they load the merged config.
-
-    confirm(prompt) may decline. Returns (restarted, message); system services need root,
-    so for those (and a manually started xray) the message says what to run.
-    """
-    if "NJU_CONNECT_CONFIG_DIR" in os.environ:
-        # a sandbox or test configuration: never touch the user's real Xray
-        return False, "restart Xray to load the new rules"
-    units = xray_units()
-    user = [unit for scope, unit in units if scope == "user"]
-    system = [unit for scope, unit in units if scope == "system"]
-    if user and (confirm is None or confirm(f"Restart {', '.join(user)} to load the new rules?")):
-        for unit in user:
-            subprocess.run(["systemctl", "--user", "restart", unit], timeout=60)
-        return True, f"Restarted {', '.join(user)}"
-    if system:
-        return False, f"run `sudo systemctl restart {' '.join(system)}` to load the new rules"
-    return False, "restart Xray to load the new rules"
