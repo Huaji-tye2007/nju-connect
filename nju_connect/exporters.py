@@ -6,11 +6,11 @@ import sys
 from datetime import datetime
 from pathlib import Path
 
-from . import VERSION, clash
+from . import VERSION, clash, xray
 from .config import DEFAULT_HTTP_PORT, DEFAULT_SERVER, MARKER, bind_port, load_config, load_settings, \
     save_settings, socks_address
 from .policy import all_ports, load_policy, nodes, routed
-from .util import ask_yes, die, write_atomic
+from .util import ask_yes, die, notify, write_atomic
 
 
 def _header(entries, skipped, config):
@@ -22,10 +22,6 @@ def _header(entries, skipped, config):
 
 def _port_text(entry, sep, range_sep):
     return sep.join(str(lo) if lo == hi else f"{lo}{range_sep}{hi}" for lo, hi in entry.ports)
-
-
-def _regex(domain):
-    return "^.+\\." + domain.replace(".", "\\.") + "$"
 
 
 # ------------------------------------------------------------------ formats
@@ -53,7 +49,7 @@ def _sing_box_rules(entries):
         if e.kind == "domain":
             rule.setdefault("domain", []).append(e.value)
         elif e.kind == "subdomains":
-            rule.setdefault("domain_regex", []).append(_regex(e.value))
+            rule.setdefault("domain_regex", []).append(xray.subdomain_regex(e.value))
         else:
             rule.setdefault("ip_cidr", []).append(e.value)
         if not all_ports(e):
@@ -104,41 +100,17 @@ def render_sing_box_config(entries, skipped, config, settings, exports):
 
 
 def render_xray(entries, skipped, config, settings, exports):
-    """Xray/V2Ray outbound + routing rules; one rule per (ports, network) and per
-    domain/IP kind, because Xray ANDs the conditions inside a rule."""
+    """Xray/V2Ray outbound + routing rules to merge (or `--install` to merge them)."""
     tag = settings["export"]["proxy_name"]
-    host, port = socks_address(config)
-    groups = {}
-    for e in routed(entries):
-        field = "ip" if e.kind == "cidr" else "domain"
-        key = (field, e.ports, e.network)
-        rule = groups.get(key)
-        if rule is None:
-            rule = groups[key] = {"type": "field", field: [], "outboundTag": tag}
-            if not all_ports(e):
-                rule["port"] = _port_text(e, ",", "-")
-            if e.network:
-                rule["network"] = e.network
-        rule[field].append(e.value if e.kind == "cidr" else
-                           f"full:{e.value}" if e.kind == "domain" else f"regexp:{_regex(e.value)}")
-    server = config.get("server_address", DEFAULT_SERVER)
-    # zju-connect's own connections to the server and VPN nodes must stay direct
-    rules = [{"type": "field", "domain": [f"full:{server}"], "outboundTag": "direct"}]
-    node_ips = [n.value for n in nodes(entries)]
-    if node_ips:
-        rules.append({"type": "field", "ip": node_ips, "outboundTag": "direct"})
-    rules += list(groups.values())
-    routing = {"rules": rules}
-    if clash.resolve_domains(settings):
-        # resolve a domain as soon as an IP rule is checked, so the IP ranges apply to NJU
-        # hosts too; IPIfNonMatch would not help once a later domain rule (e.g. geosite:cn)
-        # matches. Xray cannot limit the resolving to some domains.
-        routing["domainStrategy"] = "IPOnDemand"
-    return json.dumps({
-        "outbounds": [{"tag": tag, "protocol": "socks",
-                       "settings": {"servers": [{"address": host, "port": port}]}}],
-        "routing": routing,
-    }, ensure_ascii=False, indent=2) + "\n"
+    routing = {"rules": xray.routing_rules(entries, config, tag)}
+    if xray.domain_strategy(settings):
+        routing["domainStrategy"] = xray.domain_strategy(settings)
+    return json.dumps({"outbounds": [xray.outbound(config, tag)], "routing": routing},
+                      ensure_ascii=False, indent=2) + "\n"
+
+
+def render_v2rayn(entries, skipped, config, settings, exports):
+    return xray.render_v2rayn(entries, config, settings)
 
 
 PAC_TEMPLATE = """// {header}
@@ -234,7 +206,8 @@ FORMATS = {
     "clash-verge": (render_clash_verge, "Clash Verge Rev global script (use --install)"),
     "sing-box": (render_sing_box, "sing-box rule-set source (JSON)"),
     "sing-box-config": (render_sing_box_config, "sing-box outbound and route rules to merge (JSON, 1.11+)"),
-    "xray": (render_xray, "Xray/V2Ray outbound and routing rules (JSON)"),
+    "xray": (render_xray, "Xray outbound and routing rules (JSON; --install merges them into your config)"),
+    "v2rayn": (render_v2rayn, "v2rayN routing rules to import (JSON list, NJU rules first)"),
     "pac": (render_pac, "PAC file for browsers / system proxy settings"),
     "list": (render_list, "plain list of destinations, ports and protocols"),
 }
@@ -248,12 +221,20 @@ def remembered(settings=None):
 
 
 INLINE = "inline:"   # prefix of a remembered path whose export embeds the rules
+MERGE = "merge:"     # prefix of a remembered Xray config the rules are merged into
+
+
+def split_mode(value):
+    """A remembered value -> (INLINE, MERGE or "", path)."""
+    for mode in (INLINE, MERGE):
+        if value.startswith(mode):
+            return mode, value[len(mode):]
+    return "", value
 
 
 def remembered_paths():
-    """{format: path} of the remembered exports, without the inline marker."""
-    return {name: value[len(INLINE):] if value.startswith(INLINE) else value
-            for name, value in remembered().items()}
+    """{format: path} of the remembered exports, without the inline/merge marker."""
+    return {name: split_mode(value)[1] for name, value in remembered().items()}
 
 
 def render(name, entries=None, skipped=None, refresh=False, inline=False):
@@ -285,9 +266,9 @@ def write_file(path, content):
     return True
 
 
-def remember(name, path, inline=False):
+def remember(name, path, mode=""):
     settings = load_settings()
-    settings["exports"][name] = (INLINE if inline else "") + str(Path(path).expanduser().resolve())
+    settings["exports"][name] = mode + str(Path(path).expanduser().resolve())
     save_settings(settings)
 
 
@@ -300,9 +281,12 @@ def forget(name):
 
 def export(name, output=None, refresh=False, install=False, inline=False):
     entries, skipped = load_policy(refresh)
+    if install and name == "xray":
+        install_xray(entries, output)
+        return
     if install:
         if name != "clash-verge":
-            die("--install is only for clash-verge; use -o PATH for other formats")
+            die("--install is only for clash-verge and xray; use -o PATH for other formats")
         target = output or clash.verge_script_path()
         if not target:
             die("Clash Verge Rev not found; use -o PATH to write the script somewhere else")
@@ -319,11 +303,51 @@ def export(name, output=None, refresh=False, install=False, inline=False):
         print(render(name, entries, skipped, inline=inline), end="")
         return
     changed = write_file(output, render(name, entries, skipped, inline=inline))
-    remember(name, output, inline)
+    remember(name, output, INLINE if inline else "")
     print(f"{'Wrote' if changed else 'Unchanged:'} {Path(output).expanduser()} "
           f"({len(entries)} entries); it will be kept up to date")
     if install and changed:
         apply_verge_script()
+    if name == "v2rayn":
+        print(v2rayn_steps(output))
+
+
+def v2rayn_steps(output):
+    config, settings = load_config(), load_settings()
+    routing = xray.v2rayn_routing()
+    name = f"\"{routing[0]}\"" if routing else "the one in use"
+    lines = ["Next, in v2rayN (details in docs/proxy-clients.md):",
+             f"  1. copy {xray.share_link(config, settings)} and choose Configuration > "
+             "Import Share Links from clipboard (once)",
+             f"  2. Settings > Routing Setting, double-click the routing {name},",
+             f"     Import Rules From File: {Path(output).expanduser()}"]
+    if routing:
+        lines.append("     answer No (replace all): the file already contains that routing's own rules")
+    else:
+        lines.append("     answer Yes (append), then move the nju-connect rules to the top")
+    lines.append(f"  3. in the same window set Domain strategy to {xray.domain_strategy(settings) or 'AsIs'}, "
+                 "then Confirm in both windows")
+    lines.append("When the policy changes this file is regenerated; repeat step 2 to apply it.")
+    return "\n".join(lines)
+
+
+def install_xray(entries, output):
+    target = output or xray.default_config()
+    if not target:
+        die("no Xray config found in " + ", ".join(map(str, xray.XRAY_CONFIGS)) + "; use -o PATH")
+    try:
+        changed = xray.merge_file(target, entries, load_config(), load_settings())
+    except RuntimeError as e:
+        die(str(e))
+    remember("xray", target, MERGE)
+    target = Path(target).expanduser()
+    if not changed:
+        print(f"Unchanged: {target} already has the current NJU rules; they will be kept up to date")
+        return
+    print(f"Merged the NJU outbound and {len(entries)} entries into {target}; they will be kept up to date")
+    confirm = (lambda prompt: ask_yes(prompt, default=True)) if sys.stdin.isatty() else None
+    restarted, message = xray.restart_xray(confirm)
+    print(message if restarted else message[0].upper() + message[1:])
 
 
 def apply_verge_script():
@@ -356,23 +380,43 @@ def refresh_exports(entries=None, skipped=None, quiet=False):
     for name in sorted(exports, key=lambda n: n not in ("clash", "sing-box")):
         if name not in FORMATS:
             continue
-        inline = exports[name].startswith(INLINE)
-        path = exports[name][len(INLINE):] if inline else exports[name]
-        if write_file(path, render(name, entries, skipped, inline=inline)):
-            changed += 1
-            if not quiet:
-                print(f"Updated {path} ({name})")
+        mode, path = split_mode(exports[name])
+        if mode == MERGE:
+            if not refresh_merged(path, entries, quiet):
+                continue
+        elif not write_file(path, render(name, entries, skipped, inline=mode == INLINE)):
+            continue
+        changed += 1
+        if not quiet:
+            print(f"Updated {path} ({name})")
     return changed
+
+
+def refresh_merged(path, entries, quiet):
+    """Merge the new rules into a remembered Xray config and restart Xray if possible."""
+    try:
+        if not xray.merge_file(path, entries, load_config(), load_settings()):
+            return False
+    except RuntimeError as e:
+        notify(f"Could not update the NJU rules in {path}: {e}")
+        return False
+    restarted, message = xray.restart_xray()
+    if restarted:
+        if not quiet:
+            print(message)
+    else:
+        notify(f"The NJU access policy changed and {path} was updated; {message}")
+    return True
 
 
 def list_exports():
     exports = remembered()
     if not exports:
         print("No remembered exports; create one with `nju-connect export FORMAT -o PATH`")
-    for name, path in exports.items():
-        inline = path.startswith(INLINE)
-        path = path[len(INLINE):] if inline else path
+    for name, value in exports.items():
+        mode, path = split_mode(value)
         p = Path(path)
         age = f"updated {(datetime.now().timestamp() - p.stat().st_mtime) / 3600:.1f}h ago" \
             if p.exists() else "missing"
-        print(f"{name:<16} {path}  ({age}{', rules inline' if inline else ''})")
+        note = {INLINE: ", rules inline", MERGE: ", merged into this Xray config"}.get(mode, "")
+        print(f"{name:<16} {path}  ({age}{note})")

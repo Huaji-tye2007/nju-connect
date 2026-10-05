@@ -48,13 +48,3 @@ def zju_connect_binary():
             return candidate
     die("zju-connect not found; rerun the installer or set NJU_CONNECT_ZJU_CONNECT")
 
-
-def detect_clash():
-    """Return (ruleset output, rule-provider path, global script or "")."""
-    if VERGE_DIR.is_dir():
-        return (str(VERGE_DIR / "ruleset/nju-vpn.yaml"), "./ruleset/nju-vpn.yaml",
-                str(VERGE_DIR / "profiles/Script.js"))
-    if MIHOMO_DIR.is_dir():
-        return str(MIHOMO_DIR / "ruleset/nju-vpn.yaml"), "./ruleset/nju-vpn.yaml", ""
-    output = str(DATA_DIR / "nju-connect/nju-vpn.yaml")
-    return output, output, ""

@@ -174,7 +174,10 @@ def export_epilog():
         ("sing-box: rule-set file, then merge the printed outbound and route rules",
          "sing-box", "-o", "~/nju-vpn.json"),
         ("", "sing-box-config", "", ""),
-        ("Xray / V2Ray: merge the printed outbounds and routing into your config", "xray", "", ""),
+        ("Xray: merge the outbound and routing rules into your config and restart Xray",
+         "xray", "--install", "-o ~/.config/xray/config.json"),
+        ("v2rayN: a rules file to import in its routing settings (prints the steps)",
+         "v2rayn", "-o", "~/nju-v2rayn.json"),
         ("browsers / system proxy: use file:///home/<you>/nju.pac as the proxy URL", "pac", "-o", "~/nju.pac"),
     ]
     for note, fmt, flag, path in examples:
@@ -226,7 +229,8 @@ def build_parser():
     p.add_argument("format", nargs="?", choices=tuple(exporters.FORMATS), metavar="FORMAT")
     p.add_argument("-o", "--output", help="write to this file and keep it up to date")
     p.add_argument("--install", action="store_true",
-                   help="clash-verge only: write Clash Verge Rev's global script")
+                   help="clash-verge: write Clash Verge Rev's global script; xray: merge into your Xray "
+                        "config (-o PATH, or the one found) and restart Xray")
     p.add_argument("--inline", action="store_true",
                    help="embed the rules instead of referencing the clash/sing-box export files "
                         "(for a client that cannot read them)")
