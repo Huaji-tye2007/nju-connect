@@ -59,6 +59,8 @@ class V2raynTest(ExportFixture):
         self.assertEqual(rules[1]["ip"], ["219.219.118.25/32"])
         self.assertIn({"remarks": "nju-connect: NJU domains, port 80,443", "domain": ["full:lib.nju.edu.cn"],
                        "outboundTag": "NJUConnect", "port": "80,443"}, rules)
+        self.assertIn({"remarks": "nju-connect: other nju.edu.cn hosts (resolved by zju-connect)",
+                       "domain": ["domain:nju.edu.cn"], "outboundTag": "NJUConnect"}, rules)
         for rule in rules:
             self.assertTrue(rule["remarks"].startswith(xray.REMARK))
             self.assertLessEqual({k.lower() for k in rule}, V2RAYN_FIELDS)
@@ -96,7 +98,7 @@ class V2raynTest(ExportFixture):
             exporters.export("v2rayn", out)
         printed = "\n".join(str(c.args[0]) for c in p.call_args_list)
         self.assertIn("socks://Og@127.0.0.1:2080#NJUConnect", printed)
-        self.assertIn("Domain strategy to IPOnDemand", printed)
+        self.assertNotIn("Domain strategy", printed)   # not needed: nju.edu.cn goes to zju-connect
         self.assertEqual(exporters.remembered(), {"v2rayn": str(out.resolve())})
 
 
@@ -125,7 +127,9 @@ class XrayMergeTest(ExportFixture):
         self.assertEqual(rules[0], {"type": "field", "domain": ["full:vpn.nju.edu.cn"], "outboundTag": "direct",
                                     "ruleTag": "nju-connect"})
         self.assertEqual(rules[-1], {"type": "field", "domain": ["geosite:cn"], "outboundTag": "block"})
-        self.assertEqual(data["routing"]["domainStrategy"], "IPOnDemand")
+        self.assertEqual(data["routing"]["domainStrategy"], "AsIs")   # the user's own setting is kept
+        self.assertIn({"type": "field", "domain": ["domain:nju.edu.cn"], "outboundTag": "NJUConnect",
+                       "ruleTag": "nju-connect"}, rules)
         self.assertEqual(data["log"]["note"], "http://example.com/*x*/")
         self.assertEqual(stat.S_IMODE(self.conf.stat().st_mode), 0o640)
         self.assertEqual(len(list(self.tmp.glob("config.json.bak-*"))), 1)

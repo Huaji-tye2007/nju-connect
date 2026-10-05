@@ -146,12 +146,15 @@ class ExportTest(ExportFixture):
     def test_resolve_domains_setting(self):
         config.set_options({"export.resolve_domains": ""})
         self.assertNotIn("DOMAIN-SUFFIX", self.render("clash"))
-        self.assertNotIn("domainStrategy", self.render("xray"))
+        self.assertNotIn("domain:nju.edu.cn", self.render("xray"))
         self.assertIn("var RESOLVE = [];", self.render("pac"))
         self.assertNotIn("resolve", self.render("sing-box-config"))
         config.set_options({"export.resolve_domains": "*"})
         self.assertIn("  - 'IP-CIDR,114.212.0.0/16'", self.render("clash"))
         self.assertIn({"action": "resolve"}, json.loads(self.render("sing-box-config"))["route"]["rules"])
+        xray_routing = json.loads(self.render("xray"))["routing"]
+        self.assertEqual(xray_routing["domainStrategy"], "IPOnDemand")   # every domain: Xray resolves them
+        self.assertNotIn("domain:", json.dumps(xray_routing))
         with self.assertRaises(ValueError):
             config.set_options({"export.resolve_domains": "not a domain"})
 
@@ -203,8 +206,10 @@ class ExportTest(ExportFixture):
         data = json.loads(self.render("xray"))
         self.assertEqual(data["outbounds"][0]["settings"]["servers"], [{"address": "127.0.0.1", "port": 2080}])
         rules = data["routing"]["rules"]
-        self.assertEqual(data["routing"]["domainStrategy"], "IPOnDemand")
+        self.assertNotIn("domainStrategy", data["routing"])   # nju.edu.cn goes to zju-connect instead
         self.assertEqual(rules[0], {"type": "field", "domain": ["full:vpn.nju.edu.cn"], "outboundTag": "direct"})
+        # last, after the policy: the rest of nju.edu.cn, resolved by zju-connect with the campus DNS
+        self.assertEqual(rules[-1], {"type": "field", "domain": ["domain:nju.edu.cn"], "outboundTag": "NJUConnect"})
         self.assertEqual(rules[1], {"type": "field", "ip": ["219.219.118.25/32"], "outboundTag": "direct"})
         self.assertIn({"type": "field", "domain": ["full:lib.nju.edu.cn"], "outboundTag": "NJUConnect",
                        "port": "80,443"}, rules)

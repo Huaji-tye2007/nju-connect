@@ -38,11 +38,21 @@ def outbound(config, tag):
     return {"tag": tag, "protocol": "socks", "settings": {"servers": [{"address": host, "port": port}]}}
 
 
-def routing_rules(entries, config, tag):
-    """Xray routing rules: the VPN server and nodes direct, then the policy to `tag`.
+def suffixes(settings):
+    """Domain suffixes sent to zju-connect as a whole (none when every domain is resolved)."""
+    domains = resolve_domains(settings)
+    return () if "*" in domains else tuple(domains)
+
+
+def routing_rules(entries, config, settings, tag):
+    """Xray routing rules: the VPN server and nodes direct, the policy to `tag`, then the
+    rest of nju.edu.cn to `tag` too.
 
     One rule per (ports, network) and per domain/IP kind, because Xray ANDs the conditions
-    inside a rule.
+    inside a rule. Many NJU hosts are in the policy only by IP range; instead of resolving
+    them here (with the public DNS off campus), their domains go to zju-connect, which
+    resolves them with the campus DNS through the VPN and routes them by its policy
+    (anything outside the policy leaves the machine directly).
     """
     groups = {}
     for e in routed(entries):
@@ -63,14 +73,18 @@ def routing_rules(entries, config, tag):
     node_ips = [n.value for n in nodes(entries)]
     if node_ips:
         rules.append({"type": "field", "ip": node_ips, "outboundTag": "direct"})
-    return rules + list(groups.values())
+    rules += list(groups.values())
+    if suffixes(settings):
+        rules.append({"type": "field", "domain": [f"domain:{d}" for d in suffixes(settings)],
+                      "outboundTag": tag})
+    return rules
 
 
 def domain_strategy(settings):
-    # resolve a domain as soon as an IP rule is checked, so the IP ranges apply to NJU hosts
-    # too; IPIfNonMatch would not help once a later domain rule (e.g. geosite:cn) matches.
-    # Xray cannot limit the resolving to some domains.
-    return "IPOnDemand" if resolve_domains(settings) else None
+    # only when every domain is to be resolved (resolve_domains = *): then resolve a domain as
+    # soon as an IP rule is checked; IPIfNonMatch would not help once a later domain rule
+    # (e.g. geosite:cn) matches. Xray cannot limit the resolving to some domains.
+    return "IPOnDemand" if "*" in resolve_domains(settings) else None
 
 
 # ------------------------------------------------------------------ v2rayN
@@ -113,6 +127,8 @@ def _ours(rule):
 def _remark(rule):
     if rule["outboundTag"] == "direct":
         what = "VPN server direct" if "domain" in rule else "VPN nodes direct"
+    elif any(d.startswith("domain:") for d in rule.get("domain", [])):
+        return f"{REMARK} other {', '.join(d[len('domain:'):] for d in rule['domain'])} hosts (resolved by zju-connect)"
     else:
         what = "NJU domains" if "domain" in rule else "NJU IP ranges"
         if "port" in rule:
@@ -126,7 +142,7 @@ def v2rayn_rules(entries, config, settings, current=None):
     """v2rayN routing rules: ours first, then the active routing's rules without our old ones."""
     tag = settings["export"]["proxy_name"]
     rules = []
-    for rule in routing_rules(entries, config, tag):
+    for rule in routing_rules(entries, config, settings, tag):
         item = {"remarks": _remark(rule)}
         item.update((k, v) for k, v in rule.items() if k != "type")
         rules.append(item)
@@ -146,8 +162,9 @@ def render_v2rayn(entries, config, settings):
     name, current = routing if routing else (None, None)
     lines = [f"// {MARKER} {VERSION}: v2rayN routing rules, NJU rules first.",
              f"// Rules go to the v2rayN node named \"{settings['export']['proxy_name']}\" "
-             f"(add it from {share_link(config, settings)}).",
-             f"// Set the routing's domain strategy to {domain_strategy(settings) or 'AsIs'}."]
+             f"(add it from {share_link(config, settings)})."]
+    if domain_strategy(settings):
+        lines.append(f"// Set the domain strategy (Routing Setting window) to {domain_strategy(settings)}.")
     if routing:
         lines.append(f"// Includes the {len(current)} rule(s) of your active routing \"{name}\": import it there "
                      "and answer No (replace all).")
@@ -196,7 +213,7 @@ def merge_config(data, entries, config, settings):
         outbounds.append({"tag": "direct", "protocol": "freedom"})
     data["outbounds"] = outbounds + [outbound(config, tag)]
     routing = dict(data.get("routing") or {})
-    ours = [dict(rule, ruleTag=TAG) for rule in routing_rules(entries, config, tag)]
+    ours = [dict(rule, ruleTag=TAG) for rule in routing_rules(entries, config, settings, tag)]
     routing["rules"] = ours + [r for r in routing.get("rules") or [] if r.get("ruleTag") != TAG]
     if domain_strategy(settings):
         routing["domainStrategy"] = domain_strategy(settings)

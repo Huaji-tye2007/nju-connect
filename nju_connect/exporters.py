@@ -102,7 +102,7 @@ def render_sing_box_config(entries, skipped, config, settings, exports):
 def render_xray(entries, skipped, config, settings, exports):
     """Xray/V2Ray outbound + routing rules to merge (or `--install` to merge them)."""
     tag = settings["export"]["proxy_name"]
-    routing = {"rules": xray.routing_rules(entries, config, tag)}
+    routing = {"rules": xray.routing_rules(entries, config, settings, tag)}
     if xray.domain_strategy(settings):
         routing["domainStrategy"] = xray.domain_strategy(settings)
     return json.dumps({"outbounds": [xray.outbound(config, tag)], "routing": routing},
@@ -325,8 +325,9 @@ def v2rayn_steps(output):
         lines.append("     answer No (replace all): the file already contains that routing's own rules")
     else:
         lines.append("     answer Yes (append), then move the nju-connect rules to the top")
-    lines.append(f"  3. in the same window set Domain strategy to {xray.domain_strategy(settings) or 'AsIs'}, "
-                 "then Confirm in both windows")
+    lines.append("     and Confirm both windows; v2rayN restarts its core with the new rules")
+    if xray.domain_strategy(settings):
+        lines.append(f"  3. set Domain strategy in the Routing Setting window to {xray.domain_strategy(settings)}")
     lines.append("When the policy changes this file is regenerated; repeat step 2 to apply it.")
     return "\n".join(lines)
 
