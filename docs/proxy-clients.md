@@ -15,7 +15,9 @@ zju-connect 自己会按学校的访问策略分流：南大资源走 VPN，其�
 `nju-connect export` 有两种用法：
 
 - **`--install`**（Clash Verge Rev、原生 mihomo、sing-box、Xray）：把规则放进客户端会自己重新读取的文件，或直接合并进它的配置，学校策略变化后**自动生效**；nju-connect 无法写入的配置，会打印一次性的合并提示。
-- **不加 `--install`**：生成内容全部内联的文件或片段（例如 FlClash、Clash Party 用的覆写脚本、v2rayN 的规则文件），学校策略变化后文件会自动重新生成，但客户端需要**重新导入**。
+- **不加 `--install`**：生成内容全部内联的文件或片段（例如 FlClash、Clash Party 用的覆写脚本、v2rayN 的规则文件）。文件会随访问策略自动重新生成，但客户端保存的是导入时的副本，需要你**重新导入**才会更新。
+
+  什么时候需要重新导入：访问策略几乎每次更新都有变化，但大多只是学校服务器替域名解析出的 IP 有出入；这些域名本身仍在规则里，旧的副本照样能用，**不需要**重新导入。只有学校**增删南大资源**（域名、IP 段、端口）或**更换 VPN 网关**时才需要。nju-connect 会区分这两种变化：后者发生时，如果你有需要手动导入的导出，后台服务会弹出通知，`nju-connect export --list` 也会显示最近一次变化的时间。
 
 导出和安装都会被记住，后台服务每 30 分钟更新访问策略时自动重新生成，同一格式可以有多个导出（例如两个不同位置的脚本）。`nju-connect export --list` 列出每个导出维护的所有文件及其更新时间，`nju-connect export --forget 格式|路径|名称` 取消（文件保留）。每个格式的用法见 `nju-connect export 格式 -h`。
 
@@ -26,12 +28,12 @@ zju-connect 自己会按学校的访问策略分流：南大资源走 VPN，其�
 | 客户端                                                            | 做法                                                | 需要手动做的事                                                        | 学校策略变化后               | 测试情况                                  |
 | ----------------------------------------------------------------- | --------------------------------------------------- | --------------------------------------------------------------------- | ---------------------------- | ----------------------------------------- |
 | [Clash Verge Rev](#clash-verge-rev)                               | `export clash-verge --install` 写入全局扩展脚本     | 无（按提示重启一次 Clash Verge）                                      | 自动，立即生效               | 已实测（新的文件结构待在界面中确认）      |
-| [FlClash](#flclash)                                               | 导入 `export mihomo-script` 导出的覆写脚本          | 导入                                                                  | 重新导入脚本                 | 内核已实测，界面步骤已实测                |
-| [Clash Party 等](#clash-party--mihomo-party-等其他-mihomo-客户端) | 导入覆写脚本（其他客户端：脚本或 YAML 片段）        | 导入脚本并全局启用                                                    | 重新导入                     | Clash Party 已实测；其他客户端未实测      |
+| [FlClash](#flclash)                                               | 导入 `export mihomo-script` 导出的覆写脚本          | 导入                                                                  | 资源变化时重新导入（有通知） | 内核已实测，界面步骤已实测                |
+| [Clash Party 等](#clash-party--mihomo-party-等其他-mihomo-客户端) | 导入覆写脚本（其他客户端：脚本或 YAML 片段）        | 导入脚本并全局启用                                                    | 资源变化时重新导入（有通知） | Clash Party 已实测；其他客户端未实测      |
 | [原生 mihomo](#原生-mihomo--自己维护的-configyaml)                | `export clash-config --install` 写入规则和代理文件  | 把打印的片段合并进 `config.yaml`（一次）                              | 自动，立即生效（包括改端口） | 已实测（mihomo 1.19）                     |
 | [sing-box](#三sing-box-内核的客户端sing-box-111)                  | `export sing-box-config --install` 合并进配置并重载 | 无（sing-box 由 systemd 系统服务运行时需手动重载）                    | 自动，立即生效               | 已实测（sing-box 1.14）；图形客户端未实测 |
 | [Xray](#xray原生内核)                                             | `export xray --install` 合并进配置并重启 Xray       | 无（Xray 由 systemd 系统服务运行时需手动重启）                        | 自动合并并重启用户服务       | 已实测（Xray 26.7）                       |
-| [v2rayN](#v2rayn)                                                 | 导入节点链接 + 从文件导入路由规则                   | 导入一次节点；导入规则文件（Xray / sing-box 内核；mihomo 内核不支持） | 重新导入规则文件             | 已实测（Xray 内核，界面导入步骤）         |
+| [v2rayN](#v2rayn)                                                 | 导入节点链接 + 从文件导入路由规则                   | 导入一次节点；导入规则文件（Xray / sing-box 内核；mihomo 内核不支持） | 资源变化时重新导入（有通知） | 已实测（Xray 内核，界面导入步骤）         |
 | [v2rayA](#v2raya不直接支持)                                       | 手写 RoutingA                                       | 全部手动                                                              | 手动修改                     | 不直接支持，未实测                        |
 | [浏览器 / 系统代理](#一不使用代理客户端)                          | PAC 文件                                            | 设置一次 PAC 地址                                                     | 自动（扩展中需重新粘贴）     | 已实测                                    |
 
@@ -59,7 +61,7 @@ nju-connect export pac -o ~/nju.pac
 PAC 只把南大资源交给 `127.0.0.1:1081`，其余直连；zju-connect 停止时自动直连。
 
 - **Firefox**：设置 → 网络设置 → 自动代理配置 URL，填 `file:///home/<用户名>/nju.pac`。文件更新后点“重新载入”。
-- **浏览器扩展**（ZeroOmega / SwitchyOmega 等）：扩展通常不能读取 `file://` 地址，请新建一个“PAC 情景模式”，把 `~/nju.pac` 的内容粘贴到 PAC 脚本框中（学校策略变化后需要重新粘贴）。
+- **浏览器扩展**（ZeroOmega / SwitchyOmega 等）：扩展通常不能读取 `file://` 地址，请新建一个“PAC 情景模式”，把 `~/nju.pac` 的内容粘贴到 PAC 脚本框中（南大资源变化时需要重新粘贴，见上文“什么时候需要重新导入”）。
 - **系统代理**（GNOME：设置 → 网络 → 网络代理 → 自动，配置 URL 填 `file:///home/<用户名>/nju.pac`）。注意：如果你的代理客户端会接管系统代理，二者只能选一个，此时请改用下面对应客户端的方法。
 - **命令行**：`curl -x socks5h://127.0.0.1:1080 https://lib.nju.edu.cn`，或 `export ALL_PROXY=socks5h://127.0.0.1:1080`。因为 zju-connect 自己会分流，非南大地址也能正常访问。
 
@@ -71,7 +73,7 @@ PAC 只把南大资源交给 `127.0.0.1:1081`，其余直连；zju-connect 停�
 - 策略组 `NJU`：`fallback` 类型，先用 NJUConnect，每 5 分钟通过它访问 `http://lib.nju.edu.cn/` 检测；VPN 不可用（例如服务停止）时自动改为直连
 - 两个规则集：`nju-direct`（VPN 服务器和节点，必须直连）和 `nju-vpn`（南大资源），以及放在最前面的两条规则 `RULE-SET,nju-direct,DIRECT`、`RULE-SET,nju-vpn,NJU`
 
-所有 mihomo 客户端得到的结构都相同（名称、策略组和规则一致），区别只在代理和规则集放在哪里：不加 `--install`（FlClash、Clash Party 用的 `mihomo-script` 覆写脚本，以及打印的 `clash-config` 片段）时直接写在脚本或片段里（`type: inline`），学校策略变化后需要重新导入；用 `--install` 安装时（Clash Verge Rev、原生 mihomo）放在 nju-connect 维护的文件里：
+所有 mihomo 客户端得到的结构都相同（名称、策略组和规则一致），区别只在代理和规则集放在哪里：不加 `--install`（FlClash、Clash Party 用的 `mihomo-script` 覆写脚本，以及打印的 `clash-config` 片段）时直接写在脚本或片段里（`type: inline`），南大资源变化时需要重新导入；用 `--install` 安装时（Clash Verge Rev、原生 mihomo）放在 nju-connect 维护的文件里：
 
 | 文件（相对 mihomo 的主目录） | 内容                                         |
 | ---------------------------- | -------------------------------------------- |
@@ -114,7 +116,7 @@ PAC 只把南大资源交给 `127.0.0.1:1081`，其余直连；zju-connect 停�
 3. 然后在左侧边栏的“配置”中选中你将要使用的配置文件，点击配置卡片右上角的三个圆点，选择“更多” → “覆写” → “脚本”，选中刚刚导入的脚本，它左侧的空心圆点变为实心圆点即表示已启用。
 4. 按上文“怎样确认生效”检查。
 
-**学校策略变化后**：规则写在脚本内部，FlClash 不会自动读取更新后的文件。`nju-connect export --list` 可以看到文件的更新时间；文件更新后重新导入一次即可。
+**学校策略变化后**：规则写在脚本内部，FlClash 不会自动读取更新后的文件。只有南大资源变化时（后台服务会弹出通知，`nju-connect export --list` 显示最近一次变化的时间）才需要重新导入一次。
 
 ### Clash Party / Mihomo Party 等其他 mihomo 客户端
 
@@ -132,7 +134,7 @@ PAC 只把南大资源交给 `127.0.0.1:1081`，其余直连；zju-connect 停�
 3. 打开这个覆写的“全局启用”滑块。
 4. 按上文“怎样确认生效”检查。
 
-**学校策略变化后**：规则写在脚本内部，需要重新导入一次 `~/nju-clash.js`（`nju-connect export --list` 可以看到文件的更新时间）。
+**学校策略变化后**：规则写在脚本内部，只有南大资源变化时（后台服务会弹出通知）才需要重新导入一次 `~/nju-clash.js`。
 
 **其他 mihomo 客户端**（Clash Nyanpasu 等，未实测）：
 
@@ -145,7 +147,7 @@ PAC 只把南大资源交给 `127.0.0.1:1081`，其余直连；zju-connect 停�
 
   把其中的 `proxies`、`proxy-groups`、`rule-providers` 手动加入你的配置，`rules` 中的几条放在你的规则**最前面**。
 
-学校策略变化后同样需要重新导入或粘贴。
+同样只在南大资源变化时需要重新导入或粘贴。
 
 ### 原生 mihomo / 自己维护的 config.yaml
 
@@ -206,7 +208,7 @@ nju-connect 不会修改你的 `config.yaml`（Python 标准库无法可靠地�
 
 **从旧的做法迁移**（以前用 `export clash -o …` 加 `export clash-config` 合并过）：运行第 1 步，用新的四段替换以前合并的 `NJUConnect` 代理、`NJU` 策略组、`nju-vpn` 规则集和最前面的几条规则，再运行 `nju-connect export --forget clash`。
 
-**只想手动合并**：`nju-connect export clash-config`（不加 `--install`）打印一份结构相同、内容全部内联的片段（代理、VPN 节点直连规则、南大资源都写在其中），学校策略变化后需要重新合并。
+**只想手动合并**：`nju-connect export clash-config`（不加 `--install`）打印一份结构相同、内容全部内联的片段（代理、VPN 节点直连规则、南大资源都写在其中）。南大资源变化时需要重新合并；打印的片段不会被记住，所以没有通知，可以用 `nju-connect export --list` 或在网站打不开时检查。
 
 ## 三、sing-box 内核的客户端（sing-box 1.11+）
 
@@ -254,7 +256,7 @@ nju-connect 不会修改你的 `config.yaml`（Python 标准库无法可靠地�
 
 **移除**：运行 `nju-connect export --forget sing-box-config`，再用备份文件恢复，或删除引用 `nju-*` 规则集的规则、这三个规则集和 `NJUConnect` 出站。
 
-**只想手动合并**（例如图形客户端或另一台机器上的 sing-box）：`nju-connect export sing-box-config`（不加 `--install`）打印内容全部内联的出站和路由规则，学校策略变化后需要重新合并。片段中的直连规则使用名为 `direct` 的出站，你的配置里需要有一个 tag 正好是 `direct` 的直连出站（`{"type": "direct", "tag": "direct"}`）；如果你的直连出站叫别的名字，把片段里的 `direct` 改成它。（`--install` 会自动使用你配置里已有的直连出站，不需要这一步。）只需要规则集文件时，用 `nju-connect export sing-box -o 文件`。
+**只想手动合并**（例如图形客户端或另一台机器上的 sing-box）：`nju-connect export sing-box-config`（不加 `--install`）打印内容全部内联的出站和路由规则，南大资源变化时需要重新合并（打印的片段没有通知）。片段中的直连规则使用名为 `direct` 的出站，你的配置里需要有一个 tag 正好是 `direct` 的直连出站（`{"type": "direct", "tag": "direct"}`）；如果你的直连出站叫别的名字，把片段里的 `direct` 改成它。（`--install` 会自动使用你配置里已有的直连出站，不需要这一步。）只需要规则集文件时，用 `nju-connect export sing-box -o 文件`。
 
 **图形客户端**（GUI.for.SingBox、NekoBox、Hiddify 等，未实测）：在其“自定义出站/路由规则/规则集”设置中按上面的方式添加；如果客户端只能把规则指向它自己的节点，可以先把 `socks5 127.0.0.1:1080` 添加为一个节点，再让南大规则指向该节点。
 
@@ -282,7 +284,7 @@ Xray 按“入站 → 路由 → 出站”处理每个连接：路由规则从�
    - 如果能找到 `xray` 命令（`PATH` 中，或环境变量 `NJU_CONNECT_XRAY`），先用 `xray run -test` 检查合并结果，检查失败则不修改原文件
    - 如果 Xray 由 systemd **用户**服务运行，询问是否重启这个服务；如果是系统服务，提示你运行 `sudo systemctl restart …`
 
-2. 如果 Xray 是官方安装脚本装的系统服务，配置文件 `/usr/local/etc/xray/config.json` 属于 root，nju-connect 无法写入，`--install` 只会打印需要合并的出站和规则。Xray 没有可以引用的规则文件，所以这种情况下学校策略变化后需要重新运行命令、重新合并，nju-connect 不会记住它。更好的做法是改用用户服务运行 Xray：把配置复制到 `~/.config/xray/config.json`，`sudo systemctl disable --now xray`，再创建 `~/.config/systemd/user/xray.service`：
+2. 如果 Xray 是官方安装脚本装的系统服务，配置文件 `/usr/local/etc/xray/config.json` 属于 root，nju-connect 无法写入，`--install` 只会打印需要合并的出站和规则。Xray 没有可以引用的规则文件，所以这种情况下南大资源变化时需要重新运行命令、重新合并，nju-connect 不会记住它，也不会通知。更好的做法是改用用户服务运行 Xray：把配置复制到 `~/.config/xray/config.json`，`sudo systemctl disable --now xray`，再创建 `~/.config/systemd/user/xray.service`：
 
    ```ini
    [Unit]
@@ -353,7 +355,7 @@ v2rayN 是图形界面：它把你添加的节点和“路由设置”中的规�
 - **sing-box 内核**：v2rayN 会把同一份规则转换为 sing-box 规则（精确域名、正则、端口、TCP/UDP 和节点别名都会保留），按 v2rayN 7.24 源码确认，**未实测**。不要把“路由设置”窗口中的全局“域名解析策略”设为 `IPOnDemand`：在 sing-box 内核下，这会让所有连接都先用 v2rayN 的 DNS 解析再按 IP 连接，交给 zju-connect 的也就不再是域名。
 - **mihomo 内核**：v2rayN 只在“自定义配置”（导入完整的 Clash 配置）时使用 mihomo，此时**路由设置中的规则完全不起作用**，nju-connect **不支持**这种用法。请改用 Clash Verge Rev 等 mihomo 客户端（见第二节），或把这份 Clash 配置换成普通节点。
 
-**学校策略变化后**：后台服务会重新生成 `~/nju-v2rayn.json`（`nju-connect export --list` 可看到更新时间），但 v2rayN 不会自动读取，需要重复第 3 步（导入时同样选“否”）。
+**学校策略变化后**：后台服务会重新生成 `~/nju-v2rayn.json`，但 v2rayN 不会自动读取。只有南大资源变化时（后台服务会弹出通知，`nju-connect export --list` 显示最近一次变化的时间）才需要重复第 3 步（导入时同样选“否”）。
 
 **移除**：在规则列表中选中所有 `nju-connect:` 规则后“移除所选规则”，删除 `NJUConnect` 节点，再运行 `nju-connect export --forget v2rayn`。
 
@@ -374,7 +376,7 @@ v2rayA 没有导入规则文件的功能，nju-connect 也没有为它生成配�
 
    有端口或协议限制的条目可以写成 `ip(…) && port(80,443) && network(tcp)->njuconnect`；具体语法请参考 v2rayA 文档。
 
-3. 学校策略变化后需要按新的 `export list` 输出手动修改。
+3. 南大资源变化时需要按新的 `export list` 输出手动修改（v2rayA 没有导出格式，所以没有通知）。
 
 ## 五、其他工具
 

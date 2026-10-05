@@ -96,12 +96,12 @@ nju-connect config set account.password       # 不写值时会提示输入（�
 | 客户端                           | 命令                                                                                  | 需要手动做的事                                                                  | 学校策略变化后是否需要手动操作 |
 | -------------------------------- | ------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------- | ------------------------------ |
 | Clash Verge Rev                  | `nju-connect export clash-verge --install`                                            | 无（按提示重启一次 Clash Verge）                                                | 不需要                         |
-| FlClash                          | `nju-connect export mihomo-script -o ~/nju-flclash.js`                                | 在“工具 → 进阶设置 → 脚本”中导入该文件，并在配置的覆写中启用                    | 重新导入                       |
-| Clash Party 等其他 mihomo 客户端 | `nju-connect export mihomo-script -o …` 或 `clash-config -o …`                        | Clash Party：在“覆写”中导入脚本并打开全局启用；其他客户端：粘贴脚本或 YAML 片段 | 重新导入或粘贴                 |
+| FlClash                          | `nju-connect export mihomo-script -o ~/nju-flclash.js`                                | 在“工具 → 进阶设置 → 脚本”中导入该文件，并在配置的覆写中启用                    | 资源变化时重新导入（有通知）   |
+| Clash Party 等其他 mihomo 客户端 | `nju-connect export mihomo-script -o …` 或 `clash-config -o …`                        | Clash Party：在“覆写”中导入脚本并打开全局启用；其他客户端：粘贴脚本或 YAML 片段 | 资源变化时重新导入或粘贴       |
 | 原生 mihomo                      | `nju-connect export clash-config --install`                                           | 按打印的四段提示合并进 `config.yaml`（一次）                                    | 不需要（包括改端口）           |
 | sing-box                         | `nju-connect export sing-box-config --install`                                        | 无（sing-box 作为系统服务运行时需手动重载）                                     | 不需要                         |
 | Xray                             | `nju-connect export xray --install`                                                   | 无（Xray 作为系统服务运行时需手动重启）                                         | 不需要（自动合并并重启）       |
-| v2rayN（Xray / sing-box 内核）   | `nju-connect export v2rayn -o ~/nju-v2rayn.json`                                      | 导入一次节点链接；在路由设置中导入规则文件；mihomo 内核不支持                   | 重新导入规则文件               |
+| v2rayN（Xray / sing-box 内核）   | `nju-connect export v2rayn -o ~/nju-v2rayn.json`                                      | 导入一次节点链接；在路由设置中导入规则文件；mihomo 内核不支持                   | 资源变化时重新导入（有通知）   |
 | v2rayA                           | `nju-connect export list`                                                             | **不直接支持**：按列表手写 RoutingA 规则                                        | 手动修改                       |
 | 浏览器 / 系统代理                | `nju-connect export pac -o ~/nju.pac`                                                 | 设置 PAC 地址 `file:///home/<用户名>/nju.pac`（一次）                           | 不需要                         |
 
@@ -110,7 +110,7 @@ nju-connect config set account.password       # 不写值时会提示输入（�
 | 格式              | 内容                                                                                           |
 | ----------------- | ---------------------------------------------------------------------------------------------- |
 | `clash-verge`     | Clash Verge Rev：`--install` 写入全局扩展脚本，规则和代理放在它会监视的文件中                  |
-| `mihomo-script`   | FlClash、Clash Party 等 mihomo 图形客户端的覆写脚本（内容全部内联，策略变化后重新导入）        |
+| `mihomo-script`   | FlClash、Clash Party 等 mihomo 图形客户端的覆写脚本（内容全部内联，南大资源变化时重新导入）        |
 | `clash`           | mihomo 规则集（rule-provider，classical）                                                      |
 | `clash-config`    | mihomo 配置片段（内容全部内联）；`--install` 在 mihomo 主目录中写入规则和代理文件，并打印只需合并一次的内容 |
 | `sing-box`        | sing-box 规则集源文件（JSON）                                                                  |
@@ -120,7 +120,7 @@ nju-connect config set account.password       # 不写值时会提示输入（�
 | `pac`             | PAC 文件：南大资源走 `127.0.0.1:1081`，其余直连                                                |
 | `list`            | 纯文本列表（目标、端口、协议），可自行转换为其他格式                                           |
 
-`--install` 会从正在运行的客户端进程找到它的配置（找不到时查找常见位置，也可以用 `-o` 指定），学校策略变化后自动生效；不加 `--install` 的导出内容全部内联，客户端需要重新导入。使用 `-o` 写入的文件和 `--install` 安装的客户端都会被记住，后台服务更新访问策略时会自动重新生成；同一格式可以有多个导出：
+`--install` 会从正在运行的客户端进程找到它的配置（找不到时查找常见位置，也可以用 `-o` 指定），学校策略变化后自动生效；不加 `--install` 的导出内容全部内联，客户端需要重新导入：但只在学校增删南大资源或更换 VPN 网关时才需要（后台服务会通知），访问策略里只是解析出的 IP 有出入时不需要。使用 `-o` 写入的文件和 `--install` 安装的客户端都会被记住，后台服务更新访问策略时会自动重新生成；同一格式可以有多个导出：
 
 ```bash
 nju-connect export xray -h                   # 每个格式各自的说明和选项
