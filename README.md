@@ -88,22 +88,37 @@ nju-connect config set account.password       # 不写值时会提示输入（�
 
 ## 与代理工具配合
 
-> 各客户端（Clash Verge Rev、FlClash、Mihomo Party、mihomo、sing-box、Xray、v2rayN、v2rayA、浏览器 PAC）的详细步骤见 [docs/proxy-clients.md](docs/proxy-clients.md)。
-
 **最简单的方式**：连接后直接把应用、浏览器或系统代理设置为 `127.0.0.1:1080`（SOCKS5）或 `127.0.0.1:1081`（HTTP）。zju-connect 会根据学校的访问策略自行分流：南大资源走 VPN，其余直连。
 
-**已经在用代理工具**（Clash、sing-box、Xray 等，需要只把南大流量交给 zju-connect）时，用 `nju-connect export` 生成对应格式的规则。规则按学校下发的访问策略精确生成（域名、端口、TCP/UDP），使用 `-o` 写入文件后会被记住，后台服务更新访问策略时会自动重新生成：
+**已经在用代理工具**时，用 `nju-connect export` 生成对应客户端的规则，只把南大流量交给 zju-connect。规则按学校下发的访问策略精确生成（域名、端口、TCP/UDP）。各客户端的支持情况如下，详细步骤见 [docs/proxy-clients.md](docs/proxy-clients.md)：
 
-| 格式              | 用途                                                                                         | 示例                                                                                                                                                         |
-| ----------------- | -------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `clash-verge`     | Clash Verge Rev 全局扩展脚本（注入代理、`fallback` 策略组和规则）                            | `nju-connect export clash-verge --install`，按提示重启 Clash Verge 即可生效                                                                                  |
-| `clash`           | mihomo 规则集（rule-provider，classical）                                                    | `nju-connect export clash -o ~/.config/mihomo/ruleset/nju-vpn.yaml`                                                                                          |
-| `clash-config`    | mihomo 配置片段：代理、策略组、规则集和规则，适合 FlClash、Mihomo Party 等其他 mihomo 客户端 | `nju-connect export clash-config`，把输出合并进配置                                                                                                          |
-| `sing-box`        | sing-box 规则集源文件（JSON），适合 sing-box、Hiddify、GUI.for.SingBox                       | `nju-connect export sing-box -o ~/nju-vpn.json`                                                                                                              |
-| `sing-box-config` | sing-box 出站和路由规则片段（引用上面的规则集；未导出时内联），需要 sing-box 1.11+           | `nju-connect export sing-box-config`，把 `outbounds`、`route.rule_set` 和 `route.rules` 合并进配置（需要有 `direct` 出站和 `route.default_domain_resolver`） |
-| `xray`            | Xray/V2Ray 出站和路由规则（JSON），适合 v2rayA、Xray                                         | `nju-connect export xray`，把 `outbounds`、`routing.rules` 和 `routing.domainStrategy` 合并进配置                                                            |
-| `pac`             | PAC 文件：南大资源走 `127.0.0.1:1081`，其余直连                                              | `nju-connect export pac -o ~/nju.pac`，在浏览器或系统代理中设置 `file:///home/<用户名>/nju.pac`                                                              |
-| `list`            | 纯文本列表（目标、端口、协议），可自行转换为其他格式                                         | `nju-connect export list`                                                                                                                                    |
+| 客户端                         | 命令                                                         | 需要手动做的事                                             | 学校策略变化后               |
+| ------------------------------ | ------------------------------------------------------------ | ---------------------------------------------------------- | ---------------------------- |
+| Clash Verge Rev                | `nju-connect export clash-verge --install`                   | 无（按提示重启一次 Clash Verge）                           | 自动                         |
+| FlClash                        | `nju-connect export clash-verge --inline -o ~/nju-flclash.js` | 把文件内容粘贴为覆写脚本                                   | 重新粘贴                     |
+| Clash Party 等其他 mihomo 客户端 | `nju-connect export clash-verge --inline -o …` 或 `clash-config --inline -o …` | 粘贴覆写脚本或 YAML 片段                                   | 重新粘贴                     |
+| 原生 mihomo                    | `nju-connect export clash -o ~/.config/mihomo/ruleset/nju-vpn.yaml` 和 `clash-config` | 把片段合并进 `config.yaml`（一次）                         | 自动                         |
+| sing-box                       | `nju-connect export sing-box -o …` 和 `sing-box-config`      | 把出站和路由规则合并进配置（一次）                         | 自动                         |
+| Xray                           | `nju-connect export xray --install -o ~/.config/xray/config.json` | 无（Xray 作为系统服务运行时需手动重启）                    | 自动合并并重启 Xray 用户服务 |
+| v2rayN                         | `nju-connect export v2rayn -o ~/nju-v2rayn.json`             | 导入一次节点链接；在路由设置中导入规则文件、设置域名解析策略 | 重新导入规则文件             |
+| v2rayA                         | `nju-connect export list`                                    | **不直接支持**：按列表手写 RoutingA 规则                   | 手动修改                     |
+| 浏览器 / 系统代理              | `nju-connect export pac -o ~/nju.pac`                        | 设置 PAC 地址 `file:///home/<用户名>/nju.pac`（一次）      | 自动                         |
+
+各导出格式：
+
+| 格式              | 内容                                                                                       |
+| ----------------- | ------------------------------------------------------------------------------------------ |
+| `clash-verge`     | Clash Verge Rev 全局扩展脚本（注入代理、`fallback` 策略组和规则）；`--install` 直接安装      |
+| `clash`           | mihomo 规则集（rule-provider，classical）                                                  |
+| `clash-config`    | mihomo 配置片段：代理、策略组、规则集和规则                                                |
+| `sing-box`        | sing-box 规则集源文件（JSON）                                                              |
+| `sing-box-config` | sing-box 出站和路由规则片段（引用上面的规则集；未导出时内联），需要 sing-box 1.11+         |
+| `xray`            | Xray 出站和路由规则（JSON）；`--install` 合并进 Xray 配置文件（先备份、可重复执行）并重启 Xray |
+| `v2rayn`          | v2rayN 可导入的路由规则列表：南大规则在前，后接当前启用规则集中原有的规则                  |
+| `pac`             | PAC 文件：南大资源走 `127.0.0.1:1081`，其余直连                                            |
+| `list`            | 纯文本列表（目标、端口、协议），可自行转换为其他格式                                       |
+
+使用 `-o` 写入的文件（以及 `--install` 合并的 Xray 配置）会被记住，后台服务更新访问策略时会自动重新生成：
 
 ```bash
 nju-connect export --list            # 查看已记住的导出文件
@@ -115,7 +130,7 @@ nju-connect export clash --refresh   # 先重新下载访问策略
 
 - Clash/mihomo：每个 IP 段生成 `IP-CIDR,…,no-resolve`（直接访问 IP 时）和 `AND,((DOMAIN-SUFFIX,nju.edu.cn),(IP-CIDR,…))`（只解析南大域名）两条规则
 - sing-box：`sing-box-config` 先按域名匹配规则集，再对南大域名执行 `resolve` 后按 IP 匹配
-- Xray：设置 `domainStrategy: IPOnDemand`。Xray 无法只解析部分域名，因此所有域名都会在经过这些规则时被解析一次
+- Xray / v2rayN：设置 `domainStrategy: IPOnDemand`（v2rayN 中为规则集的“域名解析策略”）。Xray 无法只解析部分域名，因此所有域名都会在经过这些规则时被解析一次
 - PAC：只对南大域名调用 `dnsResolve`
 
 所有格式都会让 VPN 服务器和节点地址（如 `219.219.118.25`）直连，避免开启 TUN 模式时 zju-connect 自己的连接被转发回自身。
@@ -169,6 +184,7 @@ nju-connect export clash --refresh   # 先重新下载访问策略
 | `policy.py`    | 把访问策略解析为与工具无关的条目                           |
 | `exporters.py` | 各种导出格式和已记住的导出文件                             |
 | `clash.py`     | Clash/mihomo 相关格式                                      |
+| `xray.py`      | Xray/v2rayN 相关格式，合并 Xray 配置并重启 Xray            |
 
 - 测试：`python3 -m unittest discover -s tests -t .`
 - 直接运行源码：`python3 -m nju_connect --help`

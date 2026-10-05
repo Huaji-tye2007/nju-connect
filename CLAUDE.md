@@ -64,8 +64,8 @@ NJU_CONNECT_NONINTERACTIVE=1 bash install.sh                      # install the 
   - `cidr`: an IPv4 range; a domain's resolved IPs also become `cidr` entries
   - `node`: a VPN node address, which must always stay DIRECT
 - The parser mirrors how zju-connect reads the policy: L3VPN apps only, IPv4 only, other `*` wildcards skipped.
-- **`exporters.FORMATS`** is the registry of renderers: `clash`, `clash-config`, `clash-verge`, `sing-box`, `sing-box-config`, `xray`, `pac`, `list`.
-- **Remembered exports:** `export FORMAT -o PATH` stores `[exports] FORMAT = PATH`, prefixed with `inline:` for `--inline`. The service regenerates every remembered export each time it refreshes the policy (every `daemon.ruleset_interval` seconds).
+- **`exporters.FORMATS`** is the registry of renderers: `clash`, `clash-config`, `clash-verge`, `sing-box`, `sing-box-config`, `xray`, `v2rayn`, `pac`, `list`.
+- **Remembered exports:** `export FORMAT -o PATH` stores `[exports] FORMAT = PATH`, prefixed with `inline:` for `--inline` and `merge:` for `export xray --install`. The service regenerates every remembered export each time it refreshes the policy (every `daemon.ruleset_interval` seconds); a `merge:` entry is merged into the Xray config again and Xray's user service restarted (`xray.restart_xray`), with a notification when it can't be.
 
 **Rules every export must keep:**
 - Rules for the VPN server domain and the node IPs come first and are DIRECT, so zju-connect's own tunnel never loops through the proxy client (TUN mode).
@@ -75,6 +75,8 @@ NJU_CONNECT_NONINTERACTIVE=1 bash install.sh                      # install the 
   - Xray: `domainStrategy: IPOnDemand`. Xray can't limit resolving to some domains, and `IPIfNonMatch` breaks as soon as a later `geosite:cn` rule matches the domain.
   - PAC: calls `dnsResolve` only for those domains.
 - mihomo only reads rule-provider files inside its home directory. The Clash provider is a file (`./ruleset/…`, with `interval: 600` so mihomo re-reads it) only when the clash export lives under Clash Verge Rev's or mihomo's directory. Otherwise the rules are inlined.
+- Xray (`xray.merge_file`): `routing` is replaced whole by a later `-confdir` file, so the rules are merged into the user's config itself. Our outbound is appended (the first outbound is Xray's default), our rules are prepended with `ruleTag: nju-connect` and replaced on each merge, `xray run -test` runs first when xray is installed, and the first merge backs the file up (comments are lost).
+- v2rayN regenerates `binConfigs/config.json`, so `merge_file` refuses it. Its rule import (`Import Rules From File/Clipboard`) takes a JSON **list** of `RulesItem` (case-insensitive keys, comments allowed) and either appends at the end or replaces all. The `v2rayn` export therefore reads the active routing's rules from `guiConfigs/guiNDB.db` (sqlite, `mode=ro`, never written) and emits ours (remarks `nju-connect: …`, outbound = the node's remark) followed by those, for a replace-all import. An unknown outbound remark silently becomes `proxy` in v2rayN.
 - Clash Verge Rev runs its global script only when it rebuilds its configuration (on start or after a GUI change), not when the file changes. `export clash-verge --install` therefore offers to restart it (`clash.restart_verge`, which relaunches with the old process's argv and environment from `/proc`).
 
 **Campus detection** (`network.on_campus`): a direct UDP DNS query for `www.nju.edu.cn` to NJU's internal DNS servers.
@@ -92,6 +94,7 @@ NJU_CONNECT_NONINTERACTIVE=1 bash install.sh                      # install the 
 | `service.py` | the systemd unit |
 | `daemon.py` | the `Supervisor` |
 | `zju.py` | every zju-connect invocation |
+| `clash.py` / `xray.py` | Clash/mihomo; Xray, v2rayN, merging into an Xray config |
 | `paths.py` | locations, finding zju-connect and itself |
 
 ## The zju-connect fork
@@ -110,9 +113,10 @@ The developer's own machine runs a real service, a real session and a real Clash
   - restarting Clash Verge: tests pass `only_exe=` a stand-in binary
   - `apply_verge_script`: mock it
   - systemctl: mock it
+- `xray.restart_xray` does nothing while `NJU_CONNECT_CONFIG_DIR` is set. Never point a test at the user's v2rayN core or Xray service; read v2rayN's database only with `mode=ro`.
 - Never call `trust` or `untrust` for real; they change the account's trusted devices on NJU's server.
 - Don't `pkill -f <pattern>` when the pattern also appears in your own shell command, because it kills the shell running it. Match with `pgrep -x`, or a `^`-anchored pattern, and `xargs kill`.
-- To verify exports end to end, use throwaway proxy cores (mihomo from Clash Verge's `verge-mihomo`, or downloaded `sing-box`/`xray` binaries) together with a logging fake DNS server on a spare port. Never use the user's running instances.
+- To verify exports end to end, use throwaway proxy cores (mihomo from Clash Verge's `verge-mihomo`, a copy of v2rayN's `bin/xray/xray`, or downloaded `sing-box`/`xray` binaries; `NJU_CONNECT_XRAY` points the merge check at one) together with a logging fake DNS server on a spare port. Never use the user's running instances.
 
 ## Conventions
 
