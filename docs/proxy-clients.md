@@ -18,17 +18,17 @@ zju-connect 自己会按学校的访问策略分流：南大资源走 VPN，其�
 
 ## 支持情况一览
 
-| 客户端                                      | 做法                                                       | 需要手动做的事                                                         | 学校策略变化后                       | 测试情况                                  |
-| ------------------------------------------- | ---------------------------------------------------------- | ---------------------------------------------------------------------- | ------------------------------------ | ----------------------------------------- |
-| [Clash Verge Rev](#clash-verge-rev)         | `export clash-verge --install` 写入全局扩展脚本            | 无（按提示重启一次 Clash Verge）                                       | 自动（规则集文件每 10 分钟重新读取） | 已实测                                    |
-| [FlClash](#flclash)                         | 粘贴 `--inline` 导出的覆写脚本                             | 粘贴脚本                                                               | 重新粘贴脚本                         | 内核已实测，界面步骤未实测                |
-| [Clash Party 等](#clash-party--mihomo-party-等其他-mihomo-客户端) | 粘贴覆写脚本或 YAML 片段                     | 粘贴脚本或片段                                                         | 重新粘贴                             | 内核已实测，界面步骤未实测                |
-| [原生 mihomo](#原生-mihomo--自己维护的-configyaml) | 规则集文件 + 合并一次配置片段                       | 合并一次配置                                                           | 自动                                 | 已实测                                    |
-| [sing-box](#三sing-box-内核的客户端sing-box-111) | 规则集文件 + 合并一次出站和路由规则                   | 合并一次配置                                                           | 自动（sing-box 监视规则集文件）      | 已实测；图形客户端未实测                  |
-| [Xray](#xray原生内核)                        | `export xray --install` 自动合并进配置文件并重启 Xray      | 无（Xray 由 systemd 系统服务运行时需手动重启）                         | 自动合并并重启用户服务               | 已实测（Xray 26.7）                       |
-| [v2rayN](#v2rayn)                           | 导入节点链接 + 从文件导入路由规则                          | 导入一次节点；导入规则文件（Xray / sing-box 内核；mihomo 内核不支持）   | 重新导入规则文件                     | 规则已在 Xray 内核实测；导入步骤未实测    |
-| [v2rayA](#v2raya不直接支持)                  | 手写 RoutingA                                              | 全部手动                                                               | 手动修改                             | 不直接支持，未实测                        |
-| [浏览器 / 系统代理](#一不使用代理客户端)     | PAC 文件                                                   | 设置一次 PAC 地址                                                      | 自动（扩展中需重新粘贴）             | 已实测                                    |
+| 客户端                                                            | 做法                                                  | 需要手动做的事                                                        | 学校策略变化后                       | 测试情况                               |
+| ----------------------------------------------------------------- | ----------------------------------------------------- | --------------------------------------------------------------------- | ------------------------------------ | -------------------------------------- |
+| [Clash Verge Rev](#clash-verge-rev)                               | `export clash-verge --install` 写入全局扩展脚本       | 无（按提示重启一次 Clash Verge）                                      | 自动（规则集文件每 10 分钟重新读取） | 已实测                                 |
+| [FlClash](#flclash)                                               | 导入 `--inline` 导出的覆写脚本                        | 导入                                                                  | 重新导入脚本                         | 内核已实测，界面步骤已实测             |
+| [Clash Party 等](#clash-party--mihomo-party-等其他-mihomo-客户端) | 粘贴覆写脚本或 YAML 片段                              | 粘贴脚本或片段                                                        | 重新粘贴                             | 内核已实测，界面步骤未实测             |
+| [原生 mihomo](#原生-mihomo--自己维护的-configyaml)                | 规则集文件 + 合并一次配置片段                         | 合并一次配置                                                          | 自动                                 | 已实测                                 |
+| [sing-box](#三sing-box-内核的客户端sing-box-111)                  | 规则集文件 + 合并一次出站和路由规则                   | 合并一次配置                                                          | 自动（sing-box 监视规则集文件）      | 已实测；图形客户端未实测               |
+| [Xray](#xray原生内核)                                             | `export xray --install` 自动合并进配置文件并重启 Xray | 无（Xray 由 systemd 系统服务运行时需手动重启）                        | 自动合并并重启用户服务               | 已实测（Xray 26.7）                    |
+| [v2rayN](#v2rayn)                                                 | 导入节点链接 + 从文件导入路由规则                     | 导入一次节点；导入规则文件（Xray / sing-box 内核；mihomo 内核不支持） | 重新导入规则文件                     | 规则已在 Xray 内核实测；导入步骤未实测 |
+| [v2rayA](#v2raya不直接支持)                                       | 手写 RoutingA                                         | 全部手动                                                              | 手动修改                             | 不直接支持，未实测                     |
+| [浏览器 / 系统代理](#一不使用代理客户端)                          | PAC 文件                                              | 设置一次 PAC 地址                                                     | 自动（扩展中需重新粘贴）             | 已实测                                 |
 
 > 关于“已实测”：各格式的规则已在 mihomo、sing-box 1.14、Xray 26.3 / 26.7 内核上用真实的访问策略实测（南大网站走 NJU、其他网站不受影响、VPN 服务器和节点直连）。各图形客户端的菜单名称和位置随版本变化，标为“未实测”的界面步骤是按客户端源码整理的，请以实际界面为准；遇到问题欢迎提 issue。
 
@@ -89,7 +89,7 @@ PAC 只把南大资源交给 `127.0.0.1:1081`，其余直连；zju-connect 停�
 
 ### FlClash
 
-**内核已实测，FlClash 界面步骤未实测。** FlClash 0.8.85 起支持与 Clash Verge Rev 相同的 `main(config)` 覆写脚本。FlClash 读不到 Clash Verge 目录中的规则集文件，因此导出时把规则直接写进脚本：
+**内核和 FlClash 界面步骤均已实测。** FlClash 0.8.85 起支持与 Clash Verge Rev 相同的 `main(config)` 覆写脚本。FlClash 读不到 Clash Verge 目录中的规则集文件，因此导出时把规则直接写进脚本：
 
 1. 导出脚本：
 
@@ -97,10 +97,11 @@ PAC 只把南大资源交给 `127.0.0.1:1081`，其余直连；zju-connect 停�
    nju-connect export clash-verge --inline -o ~/nju-flclash.js
    ```
 
-2. 在 FlClash 的“配置”页右上角 → 脚本中新建一个脚本，把 `~/nju-flclash.js` 的全部内容粘贴进去，保存并启用。
-3. 按上文“怎样确认生效”检查。
+2. 在 FlClash 中打开“工具” → “进阶设置” → “脚本”，在右上角“添加”中选择“从文件中导入”，选择 `~/nju-flclash.js` 进行导入。
+3. 然后在左侧边栏的“配置”中选中你将要使用的配置文件，点击配置卡片右上角的三个圆点，选择“更多” → “覆写” → “脚本”，选中刚刚导入的脚本，它左侧的空心圆点变为实心圆点即表示已启用。
+4. 按上文“怎样确认生效”检查。
 
-**学校策略变化后**：规则写在脚本内部，FlClash 不会自动读取更新后的文件。`nju-connect export --list` 可以看到文件的更新时间；文件更新后重新粘贴一次即可。
+**学校策略变化后**：规则写在脚本内部，FlClash 不会自动读取更新后的文件。`nju-connect export --list` 可以看到文件的更新时间；文件更新后重新导入一次即可。
 
 ### Clash Party / Mihomo Party 等其他 mihomo 客户端
 
@@ -113,7 +114,7 @@ PAC 只把南大资源交给 `127.0.0.1:1081`，其余直连；zju-connect 停�
   nju-connect export clash-config --inline -o ~/nju-clash.yaml
   ```
 
-  把其中的 `proxies`、`proxy-groups`、`rule-providers` 加入你的配置，`rules` 中的几条放在你的规则**最前面**。
+  把其中的 `proxies`、`proxy-groups`、`rule-providers` 手动加入你的配置，`rules` 中的几条放在你的规则**最前面**。
 
 学校策略变化后同样需要重新粘贴。
 
@@ -132,7 +133,13 @@ PAC 只把南大资源交给 `127.0.0.1:1081`，其余直连；zju-connect 停�
 
    ```yaml
    proxies:
-     - { name: NJUConnect, type: socks5, server: 127.0.0.1, port: 1080, udp: true }
+     - {
+         name: NJUConnect,
+         type: socks5,
+         server: 127.0.0.1,
+         port: 1080,
+         udp: true,
+       }
    proxy-groups:
      - {
          name: NJU,
@@ -230,7 +237,7 @@ Xray 按“入站 → 路由 → 出站”处理每个连接：路由规则从�
 
 ### Xray（原生内核）
 
-**已实测**（Xray 26.7，`domainStrategy: AsIs`：南大域名、只以 IP 段出现的 `xk.nju.edu.cn` 走 `NJUConnect`，VPN 服务器直连，其余按原规则）。适用于自己维护 `config.json` 的 Xray。
+**已实测**（Xray 26.7，`domainStrategy: AsIs`）。适用于自己维护 `config.json` 的 Xray。
 
 1. 合并规则并重启 Xray：
 
