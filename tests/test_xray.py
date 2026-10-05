@@ -98,6 +98,8 @@ class V2raynTest(ExportFixture):
             exporters.export("v2rayn", out)
         printed = "\n".join(str(c.args[0]) for c in p.call_args_list)
         self.assertIn("socks://Og@127.0.0.1:2080#NJUConnect", printed)
+        self.assertIn("https://github.com/Huaji-tye2007/nju-connect-cli/blob/main/docs/proxy-clients.md#v2rayn",
+                      printed)   # installed users have no docs/ folder
         self.assertNotIn("Domain strategy", printed)   # not needed: nju.edu.cn goes to zju-connect
         self.assertEqual(exporters.remembered(), {"v2rayn": str(out.resolve())})
 

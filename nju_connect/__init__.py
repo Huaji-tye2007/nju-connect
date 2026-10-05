@@ -7,3 +7,4 @@ global script from the access policy NJU grants your account.
 
 VERSION = "0.5.7"
 INSTALL_URL = "https://raw.githubusercontent.com/Huaji-tye2007/nju-connect-cli/main/install.sh"
+DOCS_URL = "https://github.com/Huaji-tye2007/nju-connect-cli/blob/main/docs/proxy-clients.md"

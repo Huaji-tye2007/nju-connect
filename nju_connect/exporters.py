@@ -6,7 +6,7 @@ import sys
 from datetime import datetime
 from pathlib import Path
 
-from . import VERSION, clash, xray
+from . import DOCS_URL, VERSION, clash, xray
 from .config import DEFAULT_HTTP_PORT, DEFAULT_SERVER, MARKER, bind_port, load_config, load_settings, \
     save_settings, socks_address
 from .policy import all_ports, load_policy, nodes, routed
@@ -315,14 +315,14 @@ def export(name, output=None, refresh=False, install=False, inline=False):
 def v2rayn_steps(output):
     config, settings = load_config(), load_settings()
     routing = xray.v2rayn_routing()
-    name = f"\"{routing[0]}\"" if routing else "the one in use"
-    lines = ["Next, in v2rayN (details in docs/proxy-clients.md):",
+    lines = [f"Next, in v2rayN (step by step: {DOCS_URL}#v2rayn):",
              f"  1. copy {xray.share_link(config, settings)} and choose Configuration > "
              "Import Share Links from clipboard (once)",
-             f"  2. Settings > Routing Setting, double-click the routing {name},",
+             "  2. Settings > Routing Setting, double-click the routing you use,",
              f"     Import Rules From File: {Path(output).expanduser()}"]
     if routing:
-        lines.append("     answer No (replace all): the file already contains that routing's own rules")
+        lines.append(f"     answer No (replace all): the file already contains the rules of \"{routing[0]}\",")
+        lines.append("     the active routing, so import it there (activate another one and export again to change)")
     else:
         lines.append("     answer Yes (append), then move the nju-connect rules to the top")
     lines.append("     and Confirm both windows; v2rayN restarts its core with the new rules")
