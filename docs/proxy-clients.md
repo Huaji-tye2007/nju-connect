@@ -18,17 +18,17 @@ zju-connect 自己会按学校的访问策略分流：南大资源走 VPN，其�
 
 ## 支持情况一览
 
-| 客户端                                                            | 做法                                                  | 需要手动做的事                                                        | 学校策略变化后                       | 测试情况                               |
-| ----------------------------------------------------------------- | ----------------------------------------------------- | --------------------------------------------------------------------- | ------------------------------------ | -------------------------------------- |
-| [Clash Verge Rev](#clash-verge-rev)                               | `export clash-verge --install` 写入全局扩展脚本       | 无（按提示重启一次 Clash Verge）                                      | 自动（规则集文件每 10 分钟重新读取） | 已实测                                 |
-| [FlClash](#flclash)                                               | 导入 `--inline` 导出的覆写脚本                        | 导入                                                                  | 重新导入脚本                         | 内核已实测，界面步骤已实测             |
-| [Clash Party 等](#clash-party--mihomo-party-等其他-mihomo-客户端) | 粘贴覆写脚本或 YAML 片段                              | 粘贴脚本或片段                                                        | 重新粘贴                             | 内核已实测，界面步骤未实测             |
-| [原生 mihomo](#原生-mihomo--自己维护的-configyaml)                | 规则集文件 + 合并一次配置片段                         | 合并一次配置                                                          | 自动                                 | 已实测                                 |
-| [sing-box](#三sing-box-内核的客户端sing-box-111)                  | 规则集文件 + 合并一次出站和路由规则                   | 合并一次配置                                                          | 自动（sing-box 监视规则集文件）      | 已实测；图形客户端未实测               |
-| [Xray](#xray原生内核)                                             | `export xray --install` 自动合并进配置文件并重启 Xray | 无（Xray 由 systemd 系统服务运行时需手动重启）                        | 自动合并并重启用户服务               | 已实测（Xray 26.7）                    |
-| [v2rayN](#v2rayn)                                                 | 导入节点链接 + 从文件导入路由规则                     | 导入一次节点；导入规则文件（Xray / sing-box 内核；mihomo 内核不支持） | 重新导入规则文件                     | 规则已在 Xray 内核实测；导入步骤未实测 |
-| [v2rayA](#v2raya不直接支持)                                       | 手写 RoutingA                                         | 全部手动                                                              | 手动修改                             | 不直接支持，未实测                     |
-| [浏览器 / 系统代理](#一不使用代理客户端)                          | PAC 文件                                              | 设置一次 PAC 地址                                                     | 自动（扩展中需重新粘贴）             | 已实测                                 |
+| 客户端                                                            | 做法                                                  | 需要手动做的事                                                        | 学校策略变化后                       | 测试情况                             |
+| ----------------------------------------------------------------- | ----------------------------------------------------- | --------------------------------------------------------------------- | ------------------------------------ | ------------------------------------ |
+| [Clash Verge Rev](#clash-verge-rev)                               | `export clash-verge --install` 写入全局扩展脚本       | 无（按提示重启一次 Clash Verge）                                      | 自动（规则集文件每 10 分钟重新读取） | 已实测                               |
+| [FlClash](#flclash)                                               | 导入 `--inline` 导出的覆写脚本                        | 导入                                                                  | 重新导入脚本                         | 内核已实测，界面步骤已实测           |
+| [Clash Party 等](#clash-party--mihomo-party-等其他-mihomo-客户端) | 导入覆写脚本（其他客户端：脚本或 YAML 片段）          | 导入脚本并全局启用                                                    | 重新导入                             | Clash Party 已实测；其他客户端未实测 |
+| [原生 mihomo](#原生-mihomo--自己维护的-configyaml)                | 规则集文件 + 合并一次配置片段                         | 合并一次配置                                                          | 自动                                 | 已实测                               |
+| [sing-box](#三sing-box-内核的客户端sing-box-111)                  | 规则集文件 + 合并一次出站和路由规则                   | 合并一次配置                                                          | 自动（sing-box 监视规则集文件）      | 已实测；图形客户端未实测             |
+| [Xray](#xray原生内核)                                             | `export xray --install` 自动合并进配置文件并重启 Xray | 无（Xray 由 systemd 系统服务运行时需手动重启）                        | 自动合并并重启用户服务               | 已实测（Xray 26.7）                  |
+| [v2rayN](#v2rayn)                                                 | 导入节点链接 + 从文件导入路由规则                     | 导入一次节点；导入规则文件（Xray / sing-box 内核；mihomo 内核不支持） | 重新导入规则文件                     | 已实测（Xray 内核，界面导入步骤）    |
+| [v2rayA](#v2raya不直接支持)                                       | 手写 RoutingA                                         | 全部手动                                                              | 手动修改                             | 不直接支持，未实测                   |
+| [浏览器 / 系统代理](#一不使用代理客户端)                          | PAC 文件                                              | 设置一次 PAC 地址                                                     | 自动（扩展中需重新粘贴）             | 已实测                               |
 
 > 关于“已实测”：各格式的规则已在 mihomo、sing-box 1.14、Xray 26.3 / 26.7 内核上用真实的访问策略实测（南大网站走 NJU、其他网站不受影响、VPN 服务器和节点直连）。各图形客户端的菜单名称和位置随版本变化，标为“未实测”的界面步骤是按客户端源码整理的，请以实际界面为准；遇到问题欢迎提 issue。
 
@@ -105,9 +105,25 @@ PAC 只把南大资源交给 `127.0.0.1:1081`，其余直连；zju-connect 停�
 
 ### Clash Party / Mihomo Party 等其他 mihomo 客户端
 
-**内核已实测，界面步骤未实测。**
+**Clash Party 已实测；其他图形客户端均未实测。**
 
-- 如果客户端支持 JavaScript 覆写脚本（`function main(config) { … return config }`），做法同 FlClash：导出 `nju-connect export clash-verge --inline -o ~/nju-clash.js`，把内容粘贴为一个覆写脚本并启用（Clash Party 中把它设为全局覆写）。
+**Clash Party**（JavaScript 覆写脚本）：
+
+1. 导出脚本：
+
+   ```bash
+   nju-connect export clash-verge --inline -o ~/nju-clash.js
+   ```
+
+2. 点击左侧的“覆写”，再点击右上角的“+” → “打开”，选择 `~/nju-clash.js`。
+3. 打开这个覆写的“全局启用”滑块。
+4. 按上文“怎样确认生效”检查。
+
+**学校策略变化后**：规则写在脚本内部，需要重新导入一次 `~/nju-clash.js`（`nju-connect export --list` 可以看到文件的更新时间）。
+
+**其他 mihomo 客户端**（Clash Nyanpasu 等，未实测）：
+
+- 如果客户端支持 JavaScript 覆写脚本（`function main(config) { … return config }`），做法同上：把 `nju-connect export clash-verge --inline -o ~/nju-clash.js` 导出的内容导入或粘贴为一个覆写脚本并启用。
 - 如果只支持 YAML 合并/覆写，导出配置片段：
 
   ```bash
@@ -116,7 +132,7 @@ PAC 只把南大资源交给 `127.0.0.1:1081`，其余直连；zju-connect 停�
 
   把其中的 `proxies`、`proxy-groups`、`rule-providers` 手动加入你的配置，`rules` 中的几条放在你的规则**最前面**。
 
-学校策略变化后同样需要重新粘贴。
+学校策略变化后同样需要重新导入或粘贴。
 
 ### 原生 mihomo / 自己维护的 config.yaml
 
@@ -251,7 +267,7 @@ Xray 按“入站 → 路由 → 出站”处理每个连接：路由规则从�
    - 如果能找到 `xray` 命令（`PATH` 中，或环境变量 `NJU_CONNECT_XRAY`），先用 `xray run -test` 检查合并结果，检查失败则不修改原文件
    - 如果 Xray 由 systemd **用户**服务（名称以 `xray` 开头）运行，询问是否重启它；如果是系统服务，提示你运行 `sudo systemctl restart xray`
 
-2. 如果 Xray 是官方安装脚本装的系统服务，配置文件 `/usr/local/etc/xray/config.json` 属于 root，nju-connect 无法写入（也不会使用 sudo）。可以改用用户服务运行 Xray：把配置复制到 `~/.config/xray/config.json`，`sudo systemctl disable --now xray`，再创建 `~/.config/systemd/user/xray.service`：
+2. 如果 Xray 是官方安装脚本装的系统服务，配置文件 `/usr/local/etc/xray/config.json` 属于 root，nju-connect 无法写入。可以改用用户服务运行 Xray：把配置复制到 `~/.config/xray/config.json`，`sudo systemctl disable --now xray`，再创建 `~/.config/systemd/user/xray.service`：
 
    ```ini
    [Unit]
@@ -283,7 +299,7 @@ v2rayN 是图形界面：它把你添加的节点和“路由设置”中的规�
 - 一个 SOCKS 节点，别名为 `NJUConnect`，指向 zju-connect
 - 当前路由规则集中的南大规则，出站写节点别名 `NJUConnect`（v2rayN 7.x 起，规则的出站可以是任意节点的别名）
 
-**状态**：导入的规则与上面 Xray 一节实测的规则相同；导入格式按 v2rayN 7.24 源码整理，并用真实的 v2rayN 数据生成过，但**界面导入步骤尚未实测**。下面菜单名称来自 v2rayN 7.24 的中文界面。
+**状态**：已在 v2rayN 7.24（Xray 内核）的界面中按下面的步骤实测。下面菜单名称来自 v2rayN 7.24 的中文界面。
 
 1. **导出规则文件**：
 
@@ -318,7 +334,7 @@ v2rayN 是图形界面：它把你添加的节点和“路由设置”中的规�
 
 **内核**：v2rayN 按活动节点的内核类型生成配置（“设置” → “参数设置” → “Core 类型设置”中可为各类节点选择内核）：
 
-- **Xray 内核**（默认）：规则已在 Xray 26.7 内核实测。
+- **Xray 内核**（默认）：已在 v2rayN 界面中实测，规则也在 Xray 26.7 内核上单独实测。
 - **sing-box 内核**：v2rayN 会把同一份规则转换为 sing-box 规则（精确域名、正则、端口、TCP/UDP 和节点别名都会保留），按 v2rayN 7.24 源码确认，**未实测**。不要把“路由设置”窗口中的全局“域名解析策略”设为 `IPOnDemand`：在 sing-box 内核下，这会让所有连接都先用 v2rayN 的 DNS 解析再按 IP 连接，交给 zju-connect 的也就不再是域名。
 - **mihomo 内核**：v2rayN 只在“自定义配置”（导入完整的 Clash 配置）时使用 mihomo，此时**路由设置中的规则完全不起作用**，nju-connect **不支持**这种用法。请改用 Clash Verge Rev 等 mihomo 客户端（见第二节），或把这份 Clash 配置换成普通节点。
 

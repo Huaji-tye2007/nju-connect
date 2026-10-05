@@ -97,7 +97,7 @@ nju-connect config set account.password       # 不写值时会提示输入（�
 | ------------------------------ | ------------------------------------------------------------ | ---------------------------------------------------------- | ---------------------------- |
 | Clash Verge Rev                | `nju-connect export clash-verge --install`                   | 无（按提示重启一次 Clash Verge）                           | 自动                         |
 | FlClash                        | `nju-connect export clash-verge --inline -o ~/nju-flclash.js` | 在“工具 → 进阶设置 → 脚本”中导入该文件，并在配置的覆写中启用 | 重新导入                     |
-| Clash Party 等其他 mihomo 客户端 | `nju-connect export clash-verge --inline -o …` 或 `clash-config --inline -o …` | 粘贴覆写脚本或 YAML 片段                                   | 重新粘贴                     |
+| Clash Party 等其他 mihomo 客户端 | `nju-connect export clash-verge --inline -o …` 或 `clash-config --inline -o …` | Clash Party：在“覆写”中导入脚本并打开全局启用；其他客户端：粘贴脚本或 YAML 片段 | 重新导入或粘贴               |
 | 原生 mihomo                    | `nju-connect export clash -o ~/.config/mihomo/ruleset/nju-vpn.yaml` 和 `clash-config` | 把片段合并进 `config.yaml`（一次）                         | 自动                         |
 | sing-box                       | `nju-connect export sing-box -o …` 和 `sing-box-config`      | 把出站和路由规则合并进配置（一次）                         | 自动                         |
 | Xray                           | `nju-connect export xray --install -o ~/.config/xray/config.json` | 无（Xray 作为系统服务运行时需手动重启）                    | 自动合并并重启 Xray 用户服务 |
