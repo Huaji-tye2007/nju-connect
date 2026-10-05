@@ -18,17 +18,17 @@ zju-connect 自己会按学校的访问策略分流：南大资源走 VPN，其�
 
 ## 支持情况一览
 
-| 客户端                                                            | 做法                                                  | 需要手动做的事                                                        | 学校策略变化后                       | 测试情况                             |
-| ----------------------------------------------------------------- | ----------------------------------------------------- | --------------------------------------------------------------------- | ------------------------------------ | ------------------------------------ |
-| [Clash Verge Rev](#clash-verge-rev)                               | `export clash-verge --install` 写入全局扩展脚本       | 无（按提示重启一次 Clash Verge）                                      | 自动，立即生效                       | 已实测（新的文件结构待在界面中确认） |
-| [FlClash](#flclash)                                               | 导入 `--inline` 导出的覆写脚本                        | 导入                                                                  | 重新导入脚本                         | 内核已实测，界面步骤已实测           |
-| [Clash Party 等](#clash-party--mihomo-party-等其他-mihomo-客户端) | 导入覆写脚本（其他客户端：脚本或 YAML 片段）          | 导入脚本并全局启用                                                    | 重新导入                             | Clash Party 已实测；其他客户端未实测 |
-| [原生 mihomo](#原生-mihomo--自己维护的-configyaml)                | `export clash-config --install` 写入规则和代理文件    | 把打印的片段合并进 `config.yaml`（一次）                              | 自动，立即生效（包括改端口）         | 已实测（mihomo 1.19）                |
-| [sing-box](#三sing-box-内核的客户端sing-box-111)                  | `export sing-box-config --install` 合并进配置并重载   | 无（sing-box 由 systemd 系统服务运行时需手动重载）                    | 自动，立即生效                       | 已实测（sing-box 1.14）；图形客户端未实测 |
-| [Xray](#xray原生内核)                                             | `export xray --install` 合并进配置并重启 Xray         | 无（Xray 由 systemd 系统服务运行时需手动重启）                        | 自动合并并重启用户服务               | 已实测（Xray 26.7）                  |
-| [v2rayN](#v2rayn)                                                 | 导入节点链接 + 从文件导入路由规则                     | 导入一次节点；导入规则文件（Xray / sing-box 内核；mihomo 内核不支持） | 重新导入规则文件                     | 已实测（Xray 内核，界面导入步骤）    |
-| [v2rayA](#v2raya不直接支持)                                       | 手写 RoutingA                                         | 全部手动                                                              | 手动修改                             | 不直接支持，未实测                   |
-| [浏览器 / 系统代理](#一不使用代理客户端)                          | PAC 文件                                              | 设置一次 PAC 地址                                                     | 自动（扩展中需重新粘贴）             | 已实测                               |
+| 客户端                                                            | 做法                                                | 需要手动做的事                                                        | 学校策略变化后               | 测试情况                                  |
+| ----------------------------------------------------------------- | --------------------------------------------------- | --------------------------------------------------------------------- | ---------------------------- | ----------------------------------------- |
+| [Clash Verge Rev](#clash-verge-rev)                               | `export clash-verge --install` 写入全局扩展脚本     | 无（按提示重启一次 Clash Verge）                                      | 自动，立即生效               | 已实测（新的文件结构待在界面中确认）      |
+| [FlClash](#flclash)                                               | 导入 `--inline` 导出的覆写脚本                      | 导入                                                                  | 重新导入脚本                 | 内核已实测，界面步骤已实测                |
+| [Clash Party 等](#clash-party--mihomo-party-等其他-mihomo-客户端) | 导入覆写脚本（其他客户端：脚本或 YAML 片段）        | 导入脚本并全局启用                                                    | 重新导入                     | Clash Party 已实测；其他客户端未实测      |
+| [原生 mihomo](#原生-mihomo--自己维护的-configyaml)                | `export clash-config --install` 写入规则和代理文件  | 把打印的片段合并进 `config.yaml`（一次）                              | 自动，立即生效（包括改端口） | 已实测（mihomo 1.19）                     |
+| [sing-box](#三sing-box-内核的客户端sing-box-111)                  | `export sing-box-config --install` 合并进配置并重载 | 无（sing-box 由 systemd 系统服务运行时需手动重载）                    | 自动，立即生效               | 已实测（sing-box 1.14）；图形客户端未实测 |
+| [Xray](#xray原生内核)                                             | `export xray --install` 合并进配置并重启 Xray       | 无（Xray 由 systemd 系统服务运行时需手动重启）                        | 自动合并并重启用户服务       | 已实测（Xray 26.7）                       |
+| [v2rayN](#v2rayn)                                                 | 导入节点链接 + 从文件导入路由规则                   | 导入一次节点；导入规则文件（Xray / sing-box 内核；mihomo 内核不支持） | 重新导入规则文件             | 已实测（Xray 内核，界面导入步骤）         |
+| [v2rayA](#v2raya不直接支持)                                       | 手写 RoutingA                                       | 全部手动                                                              | 手动修改                     | 不直接支持，未实测                        |
+| [浏览器 / 系统代理](#一不使用代理客户端)                          | PAC 文件                                            | 设置一次 PAC 地址                                                     | 自动（扩展中需重新粘贴）     | 已实测                                    |
 
 > 关于“已实测”：各格式的规则已在 mihomo、sing-box 1.14、Xray 26.3 / 26.7 内核上用真实的访问策略实测（南大网站走 NJU、其他网站不受影响、VPN 服务器和节点直连）。各图形客户端的菜单名称和位置随版本变化，标为“未实测”的界面步骤是按客户端源码整理的，请以实际界面为准；遇到问题欢迎提 issue。
 
@@ -66,13 +66,13 @@ PAC 只把南大资源交给 `127.0.0.1:1081`，其余直连；zju-connect 停�
 - 策略组 `NJU`：`fallback` 类型，先用 NJUConnect，每 5 分钟通过它访问 `http://lib.nju.edu.cn/` 检测；VPN 不可用（例如服务停止）时自动改为直连
 - 两个规则集：`nju-direct`（VPN 服务器和节点，必须直连）和 `nju-vpn`（南大资源），以及放在最前面的两条规则 `RULE-SET,nju-direct,DIRECT`、`RULE-SET,nju-vpn,NJU`
 
-用 `--install` 安装时（Clash Verge Rev、原生 mihomo），代理和两个规则集都放在 nju-connect 维护的文件里：
+所有 mihomo 客户端得到的结构都相同（名称、策略组和规则一致），区别只在代理和规则集放在哪里：不加 `--install`（FlClash、Clash Party 用的 `--inline` 脚本，以及打印的片段）时直接写在脚本或片段里（`type: inline`），学校策略变化后需要重新导入；用 `--install` 安装时（Clash Verge Rev、原生 mihomo）放在 nju-connect 维护的文件里：
 
-| 文件（相对 mihomo 的主目录） | 内容 |
-| --- | --- |
-| `ruleset/nju-vpn.yaml` | 南大资源 |
-| `ruleset/nju-direct.yaml` | VPN 服务器和节点 |
-| `proxies/nju-connect.yaml` | `NJUConnect`（含端口）和 `NJUConnect-DIRECT` |
+| 文件（相对 mihomo 的主目录） | 内容                                         |
+| ---------------------------- | -------------------------------------------- |
+| `ruleset/nju-vpn.yaml`       | 南大资源                                     |
+| `ruleset/nju-direct.yaml`    | VPN 服务器和节点                             |
+| `proxies/nju-connect.yaml`   | `NJUConnect`（含端口）和 `NJUConnect-DIRECT` |
 
 后台服务更新访问策略、或你修改 SOCKS 端口时只重写这些文件；mihomo 会监视它们的变化，**立即生效，不需要重启**。只有修改代理名称、策略组名称、类型或检测地址（`nju-connect config set export.…`）时，策略组和规则本身才会变化。
 
@@ -97,7 +97,7 @@ PAC 只把南大资源交给 `127.0.0.1:1081`，其余直连；zju-connect 停�
 
 ### FlClash
 
-**内核和 FlClash 界面步骤均已实测。** FlClash 0.8.85 起支持与 Clash Verge Rev 相同的 `main(config)` 覆写脚本。FlClash 读不到 Clash Verge 目录中的规则集文件，因此导出时把规则直接写进脚本：
+**内核和 FlClash 界面步骤均已实测。**（这一版的脚本改为与 Clash Verge Rev 相同的结构，代理放在 `type: inline` 的 proxy-provider 中，已在 mihomo 1.19 内核上实测，还需要在 FlClash 中再确认一次。）FlClash 0.8.85 起支持与 Clash Verge Rev 相同的 `main(config)` 覆写脚本。FlClash 读不到 Clash Verge 目录中的规则集文件，因此导出时把规则直接写进脚本：
 
 1. 导出脚本：
 
@@ -113,7 +113,7 @@ PAC 只把南大资源交给 `127.0.0.1:1081`，其余直连；zju-connect 停�
 
 ### Clash Party / Mihomo Party 等其他 mihomo 客户端
 
-**Clash Party 已实测；其他图形客户端均未实测。**
+**Clash Party 已实测；其他图形客户端均未实测。**（这一版的脚本结构有变化，同 FlClash，还需要在 Clash Party 中再确认一次。）
 
 **Clash Party**（JavaScript 覆写脚本）：
 
@@ -146,7 +146,7 @@ PAC 只把南大资源交给 `127.0.0.1:1081`，其余直连；zju-connect 停�
 
 **已实测**（mihomo 1.19：按打印的提示合并后，`mihomo -t` 通过，策略组成员顺序正确，替换规则文件和代理文件后立即生效）。
 
-nju-connect 不会修改你的 `config.yaml`（Python 标准库无法可靠地解析和改写 YAML，改坏了会让整个代理不可用），而是把会变化的内容都放进上表的文件里。所以只需要**手动合并一次**：
+nju-connect 不会修改你的 `config.yaml`（Python 标准库无法可靠地解析和改写 YAML），而是把会变化的内容都放进上表的文件里。所以只需要**手动合并一次**：
 
 1. 写入文件，并打印需要合并的内容：
 
@@ -154,13 +154,14 @@ nju-connect 不会修改你的 `config.yaml`（Python 标准库无法可靠地�
    nju-connect export clash-config --install
    ```
 
-   命令会从正在运行的 mihomo 进程（`-d` 参数）找到它的主目录，找不到时使用 `~/.config/mihomo`；也可以用 `-o 主目录`（或 `-o 主目录/config.yaml`）指定。主目录属于 root（例如系统服务的 `/etc/mihomo`）时 nju-connect 无法写入，请改用你自己目录下的配置运行 mihomo，或用 `-o` 指定一个可写的主目录。
+   命令会从正在运行的 mihomo 进程找到它的主目录，找不到时使用 `~/.config/mihomo`；也可以用 `-o 主目录`（或 `-o 主目录/config.yaml`）指定。主目录属于 root（例如系统服务的 `/etc/mihomo`）时 nju-connect 无法写入，请改用你自己目录下的配置运行 mihomo，或用 `-o` 指定一个可写的主目录。
 
 2. 按打印的四段提示，把内容合并进 `config.yaml`。打印的内容分为 ①②③④ 四段，每段注明放在哪个键下面；没有这个键时新建即可。合并后大致如下（具体参数可能因设置的不同而发生变化，具体以生成的参数为准）：
 
    ```yaml
    proxy-providers:
-     nju-connect: { type: file, path: ./proxies/nju-connect.yaml, interval: 600 }
+     nju-connect:
+       { type: file, path: ./proxies/nju-connect.yaml, interval: 600 }
    proxy-groups:
      - {
          name: NJU,
@@ -171,9 +172,21 @@ nju-connect 不会修改你的 `config.yaml`（Python 标准库无法可靠地�
        }
    rule-providers:
      nju-direct:
-       { type: file, behavior: classical, format: yaml, path: ./ruleset/nju-direct.yaml, interval: 600 }
+       {
+         type: file,
+         behavior: classical,
+         format: yaml,
+         path: ./ruleset/nju-direct.yaml,
+         interval: 600,
+       }
      nju-vpn:
-       { type: file, behavior: classical, format: yaml, path: ./ruleset/nju-vpn.yaml, interval: 600 }
+       {
+         type: file,
+         behavior: classical,
+         format: yaml,
+         path: ./ruleset/nju-vpn.yaml,
+         interval: 600,
+       }
    rules:
      - RULE-SET,nju-direct,DIRECT
      - RULE-SET,nju-vpn,NJU
@@ -188,7 +201,7 @@ nju-connect 不会修改你的 `config.yaml`（Python 标准库无法可靠地�
 
 **从旧的做法迁移**（以前用 `export clash -o …` 加 `export clash-config` 合并过）：运行第 1 步，用新的四段替换以前合并的 `NJUConnect` 代理、`NJU` 策略组、`nju-vpn` 规则集和最前面的几条规则，再运行 `nju-connect export --forget clash`。
 
-**只想手动合并**：`nju-connect export clash-config`（不加 `--install`）仍然打印一份完整的片段，代理、VPN 节点直连规则都写在片段里，学校策略变化后需要重新合并。
+**只想手动合并**：`nju-connect export clash-config`（不加 `--install`）打印一份结构相同、内容全部内联的片段（代理、VPN 节点直连规则、南大资源都写在其中），学校策略变化后需要重新合并。
 
 ## 三、sing-box 内核的客户端（sing-box 1.11+）
 

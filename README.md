@@ -136,7 +136,7 @@ nju-connect export clash --refresh   # 先重新下载访问策略
 
 所有格式都会让 VPN 服务器和节点地址（如 `219.219.118.25`）直连，避免开启 TUN 模式时 zju-connect 自己的连接被转发回自身。用 `--install` 安装时，这些直连规则也在自动更新的文件中，学校更换 VPN 节点后同样自动生效。
 
-**在校内**：`auto` 模式在校内会停止 zju-connect，此时 nju-connect 自己在同样的 SOCKS5/HTTP 端口上提供一个直连代理（`daemon.campus_proxy`），因此把南大流量交给 `127.0.0.1:1080` 的规则在校内也能正常使用。导出的 Clash 策略组还是 `fallback` 类型：VPN 在线时走 zju-connect，不可用时自动改为直连。mihomo 只能读取其主目录下的规则和代理文件，因此不加 `--install` 时，如果 `clash` 导出文件不在 Clash Verge Rev 或 `~/.config/mihomo` 目录中，`clash-verge` / `clash-config` 会把规则直接写进脚本或片段。
+**在校内**：`auto` 模式在校内会停止 zju-connect，此时 nju-connect 自己在同样的 SOCKS5/HTTP 端口上提供一个直连代理（`daemon.campus_proxy`），因此把南大流量交给 `127.0.0.1:1080` 的规则在校内也能正常使用。导出的 Clash 策略组还是 `fallback` 类型：VPN 在线时走 zju-connect，不可用时自动改为直连。所有 mihomo 客户端使用相同的策略组和规则：`--install` 时代理和规则集放在 mihomo 会监视的文件中；不加 `--install`（例如 FlClash、Clash Party 的 `--inline` 脚本）时全部内联在脚本或片段里。
 
 ## 后台服务如何工作
 
