@@ -254,7 +254,7 @@ nju-connect 不会修改你的 `config.yaml`（Python 标准库无法可靠地�
 
 **移除**：运行 `nju-connect export --forget sing-box-config`，再用备份文件恢复，或删除引用 `nju-*` 规则集的规则、这三个规则集和 `NJUConnect` 出站。
 
-**只想手动合并**（例如图形客户端或另一台机器上的 sing-box）：`nju-connect export sing-box-config`（不加 `--install`）打印内容全部内联的出站和路由规则，学校策略变化后需要重新合并。只需要规则集文件时，用 `nju-connect export sing-box -o 文件`。
+**只想手动合并**（例如图形客户端或另一台机器上的 sing-box）：`nju-connect export sing-box-config`（不加 `--install`）打印内容全部内联的出站和路由规则，学校策略变化后需要重新合并。片段中的直连规则使用名为 `direct` 的出站，你的配置里需要有一个 tag 正好是 `direct` 的直连出站（`{"type": "direct", "tag": "direct"}`）；如果你的直连出站叫别的名字，把片段里的 `direct` 改成它。（`--install` 会自动使用你配置里已有的直连出站，不需要这一步。）只需要规则集文件时，用 `nju-connect export sing-box -o 文件`。
 
 **图形客户端**（GUI.for.SingBox、NekoBox、Hiddify 等，未实测）：在其“自定义出站/路由规则/规则集”设置中按上面的方式添加；如果客户端只能把规则指向它自己的节点，可以先把 `socks5 127.0.0.1:1080` 添加为一个节点，再让南大规则指向该节点。
 
@@ -305,7 +305,7 @@ Xray 按“入站 → 路由 → 出站”处理每个连接：路由规则从�
 
 **移除**：运行 `nju-connect export --forget xray`，再用备份文件恢复，或删除配置中带 `"ruleTag": "nju-connect"` 的规则和 `NJUConnect` 出站。
 
-**只想手动合并**：`nju-connect export xray`（不加 `--install`）打印 `outbounds` 和 `routing`，按上面的说明自己合并即可。
+**只想手动合并**：`nju-connect export xray`（不加 `--install`）打印 `outbounds` 和 `routing`，按上面的说明自己合并即可。片段中的直连规则使用 `outboundTag: direct`，你的配置里需要有一个 tag 正好是 `direct` 的 `freedom` 出站；如果你的直连出站叫别的名字，把片段里的 `direct` 改成它。（`--install` 在没有这个出站时会自动补上。）
 
 ### v2rayN
 

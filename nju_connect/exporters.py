@@ -229,7 +229,8 @@ FORMATS = {
         "sing-box config (1.11+) and reloads sing-box; the rule sets are kept up to date and sing-box "
         "rereads them by itself. A config you cannot write (e.g. root's /etc/sing-box) is left alone: the "
         f"rule sets go to {paths.SING_BOX_RULE_SETS} and what to merge once is printed. Without "
-        "--install: prints a self-contained snippet (rules inline), to merge again after policy changes.",
+        "--install: prints a self-contained snippet (rules inline), to merge again after policy changes; "
+        "its direct rules use the outbound tagged `direct`, which your config must have.",
         "with --install: the sing-box config (otherwise found from the running sing-box); "
         "without: the snippet file",
         "merge into the config (or print what to merge once) and keep the rules up to date",
@@ -239,7 +240,8 @@ FORMATS = {
         "With --install: merges the NJUConnect outbound and the routing rules into the Xray config and "
         "restarts Xray, again whenever the policy changes. A config you cannot write is left alone and "
         "what to merge is printed (merge it again after policy changes, or run Xray as your user). "
-        "Without --install: prints the outbound and routing rules.",
+        "Without --install: prints the outbound and routing rules; their direct rules use the outbound "
+        "tagged `direct` (freedom), which your config must have.",
         "with --install: the Xray config (otherwise found from the running Xray); without: the file to write",
         "merge into the config and keep it up to date",
         ["nju-connect export xray --install"]),
