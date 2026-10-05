@@ -72,20 +72,20 @@ nju-connect config set account.password       # 不写值时会提示输入（�
 
 修改后会自动生效：涉及连接或服务的设置会重启正在运行的服务，涉及导出的设置会重新生成已记住的导出文件。非法的值会被拒绝，文件保持不变。
 
-| 设置                                                             | 含义                                                                                 | 默认值                                        |
-| ---------------------------------------------------------------- | ------------------------------------------------------------------------------------ | --------------------------------------------- |
-| `account.username` / `account.password` / `account.login_domain` | 学号、密码、登录域                                                                   | `setup` 时填写                                |
-| `server.address` / `server.port`                                 | aTrust 服务器                                                                        | `vpn.nju.edu.cn` / `443`                      |
-| `proxy.socks_port` / `proxy.http_port`                           | 本机代理端口（仅监听 127.0.0.1）                                                     | `1080` / `1081`                               |
-| `daemon.mode`                                                    | `auto`：只在校外连接；`always`：始终连接                                             | `auto`                                        |
-| `daemon.check_interval`                                          | 检查网络的间隔（秒，≥10）                                                            | `60`                                          |
-| `daemon.ruleset_interval`                                        | 更新访问策略和导出文件的间隔（秒，≥300）                                             | `1800`                                        |
-| `daemon.campus_proxy`                                            | 在校内（zju-connect 停止时）由 nju-connect 在代理端口上提供直连代理：`direct` 或 `off` | `direct`                                      |
-| `campus.dns_servers` / `campus.probe_name`                       | 用于判断是否在校园网的内网 DNS（`auto`：取自访问策略）和查询域名                     | `auto` / `www.nju.edu.cn`                     |
-| `export.proxy_name` / `export.group_name`                        | 导出的 Clash/Xray 配置中的代理和策略组名称                                           | `NJUConnect` / `NJU`                          |
-| `export.group_type`                                              | Clash 策略组类型：`fallback`、`url-test`、`select`                                   | `fallback`                                    |
-| `export.health_url` / `export.health_interval`                   | Clash 策略组健康检查地址（需能通过 VPN 访问）和间隔（秒，≥30）                       | `http://lib.nju.edu.cn/` / `300`              |
-| `export.resolve_domains`                                         | 为匹配学校 IP 段而解析的域名（逗号分隔；`*` 表示全部解析，留空表示从不解析），见下文 | `nju.edu.cn`                                  |
+| 设置                                                             | 含义                                                                                   | 默认值                           |
+| ---------------------------------------------------------------- | -------------------------------------------------------------------------------------- | -------------------------------- |
+| `account.username` / `account.password` / `account.login_domain` | 学号、密码、登录域                                                                     | `setup` 时填写                   |
+| `server.address` / `server.port`                                 | aTrust 服务器                                                                          | `vpn.nju.edu.cn` / `443`         |
+| `proxy.socks_port` / `proxy.http_port`                           | 本机代理端口（仅监听 127.0.0.1）                                                       | `1080` / `1081`                  |
+| `daemon.mode`                                                    | `auto`：只在校外连接；`always`：始终连接                                               | `auto`                           |
+| `daemon.check_interval`                                          | 检查网络的间隔（秒，≥10）                                                              | `60`                             |
+| `daemon.ruleset_interval`                                        | 更新访问策略和导出文件的间隔（秒，≥300）                                               | `1800`                           |
+| `daemon.campus_proxy`                                            | 在校内（zju-connect 停止时）由 nju-connect 在代理端口上提供直连代理：`direct` 或 `off` | `direct`                         |
+| `campus.dns_servers` / `campus.probe_name`                       | 用于判断是否在校园网的内网 DNS（`auto`：取自访问策略）和查询域名                       | `auto` / `www.nju.edu.cn`        |
+| `export.proxy_name` / `export.group_name`                        | 导出的 Clash/Xray 配置中的代理和策略组名称                                             | `NJUConnect` / `NJU`             |
+| `export.group_type`                                              | Clash 策略组类型：`fallback`、`url-test`、`select`                                     | `fallback`                       |
+| `export.health_url` / `export.health_interval`                   | Clash 策略组健康检查地址（需能通过 VPN 访问）和间隔（秒，≥30）                         | `http://lib.nju.edu.cn/` / `300` |
+| `export.resolve_domains`                                         | 为匹配学校 IP 段而解析的域名（逗号分隔；`*` 表示全部解析，留空表示从不解析），见下文   | `nju.edu.cn`                     |
 
 ## 与代理工具配合
 
@@ -93,31 +93,31 @@ nju-connect config set account.password       # 不写值时会提示输入（�
 
 **已经在用代理工具**时，用 `nju-connect export` 生成对应客户端的规则，只把南大流量交给 zju-connect。规则按学校下发的访问策略精确生成（域名、端口、TCP/UDP）。各客户端的支持情况如下，详细步骤见 [docs/proxy-clients.md](docs/proxy-clients.md)：
 
-| 客户端                         | 命令                                                         | 需要手动做的事                                             | 学校策略变化后               |
-| ------------------------------ | ------------------------------------------------------------ | ---------------------------------------------------------- | ---------------------------- |
-| Clash Verge Rev                | `nju-connect export clash-verge --install`                   | 无（按提示重启一次 Clash Verge）                           | 自动                         |
-| FlClash                        | `nju-connect export clash-verge --inline -o ~/nju-flclash.js` | 在“工具 → 进阶设置 → 脚本”中导入该文件，并在配置的覆写中启用 | 重新导入                     |
-| Clash Party 等其他 mihomo 客户端 | `nju-connect export clash-verge --inline -o …` 或 `clash-config --inline -o …` | Clash Party：在“覆写”中导入脚本并打开全局启用；其他客户端：粘贴脚本或 YAML 片段 | 重新导入或粘贴               |
-| 原生 mihomo                    | `nju-connect export clash -o ~/.config/mihomo/ruleset/nju-vpn.yaml` 和 `clash-config` | 把片段合并进 `config.yaml`（一次）                         | 自动                         |
-| sing-box                       | `nju-connect export sing-box -o …` 和 `sing-box-config`      | 把出站和路由规则合并进配置（一次）                         | 自动                         |
-| Xray                           | `nju-connect export xray --install -o ~/.config/xray/config.json` | 无（Xray 作为系统服务运行时需手动重启）                    | 自动合并并重启 Xray 用户服务 |
-| v2rayN（Xray / sing-box 内核） | `nju-connect export v2rayn -o ~/nju-v2rayn.json`             | 导入一次节点链接；在路由设置中导入规则文件；mihomo 内核不支持 | 重新导入规则文件             |
-| v2rayA                         | `nju-connect export list`                                    | **不直接支持**：按列表手写 RoutingA 规则                   | 手动修改                     |
-| 浏览器 / 系统代理              | `nju-connect export pac -o ~/nju.pac`                        | 设置 PAC 地址 `file:///home/<用户名>/nju.pac`（一次）      | 自动                         |
+| 客户端                           | 命令                                                                                  | 需要手动做的事                                                                  | 学校策略变化后               |
+| -------------------------------- | ------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------- | ---------------------------- |
+| Clash Verge Rev                  | `nju-connect export clash-verge --install`                                            | 无（按提示重启一次 Clash Verge）                                                | 自动                         |
+| FlClash                          | `nju-connect export clash-verge --inline -o ~/nju-flclash.js`                         | 在“工具 → 进阶设置 → 脚本”中导入该文件，并在配置的覆写中启用                    | 重新导入                     |
+| Clash Party 等其他 mihomo 客户端 | `nju-connect export clash-verge --inline -o …` 或 `clash-config --inline -o …`        | Clash Party：在“覆写”中导入脚本并打开全局启用；其他客户端：粘贴脚本或 YAML 片段 | 重新导入或粘贴               |
+| 原生 mihomo                      | `nju-connect export clash -o ~/.config/mihomo/ruleset/nju-vpn.yaml` 和 `clash-config` | 把片段合并进 `config.yaml`（一次）                                              | 自动                         |
+| sing-box                         | `nju-connect export sing-box -o …` 和 `sing-box-config`                               | 把出站和路由规则合并进配置（一次）                                              | 自动                         |
+| Xray                             | `nju-connect export xray --install -o ~/.config/xray/config.json`                     | 无（Xray 作为系统服务运行时需手动重启）                                         | 自动合并并重启 Xray 用户服务 |
+| v2rayN（Xray / sing-box 内核）   | `nju-connect export v2rayn -o ~/nju-v2rayn.json`                                      | 导入一次节点链接；在路由设置中导入规则文件；mihomo 内核不支持                   | 重新导入规则文件             |
+| v2rayA                           | `nju-connect export list`                                                             | **不直接支持**：按列表手写 RoutingA 规则                                        | 手动修改                     |
+| 浏览器 / 系统代理                | `nju-connect export pac -o ~/nju.pac`                                                 | 设置 PAC 地址 `file:///home/<用户名>/nju.pac`（一次）                           | 自动                         |
 
 各导出格式：
 
-| 格式              | 内容                                                                                       |
-| ----------------- | ------------------------------------------------------------------------------------------ |
-| `clash-verge`     | Clash Verge Rev 全局扩展脚本（注入代理、`fallback` 策略组和规则）；`--install` 直接安装      |
-| `clash`           | mihomo 规则集（rule-provider，classical）                                                  |
-| `clash-config`    | mihomo 配置片段：代理、策略组、规则集和规则                                                |
-| `sing-box`        | sing-box 规则集源文件（JSON）                                                              |
-| `sing-box-config` | sing-box 出站和路由规则片段（引用上面的规则集；未导出时内联），需要 sing-box 1.11+         |
+| 格式              | 内容                                                                                           |
+| ----------------- | ---------------------------------------------------------------------------------------------- |
+| `clash-verge`     | Clash Verge Rev 全局扩展脚本（注入代理、`fallback` 策略组和规则）；`--install` 直接安装        |
+| `clash`           | mihomo 规则集（rule-provider，classical）                                                      |
+| `clash-config`    | mihomo 配置片段：代理、策略组、规则集和规则                                                    |
+| `sing-box`        | sing-box 规则集源文件（JSON）                                                                  |
+| `sing-box-config` | sing-box 出站和路由规则片段（引用上面的规则集；未导出时内联），需要 sing-box 1.11+             |
 | `xray`            | Xray 出站和路由规则（JSON）；`--install` 合并进 Xray 配置文件（先备份、可重复执行）并重启 Xray |
-| `v2rayn`          | v2rayN 可导入的路由规则列表：南大规则在前，后接当前启用规则集中原有的规则                  |
-| `pac`             | PAC 文件：南大资源走 `127.0.0.1:1081`，其余直连                                            |
-| `list`            | 纯文本列表（目标、端口、协议），可自行转换为其他格式                                       |
+| `v2rayn`          | v2rayN 可导入的路由规则列表：南大规则在前，后接当前启用规则集中原有的规则                      |
+| `pac`             | PAC 文件：南大资源走 `127.0.0.1:1081`，其余直连                                                |
+| `list`            | 纯文本列表（目标、端口、协议），可自行转换为其他格式                                           |
 
 使用 `-o` 写入的文件（以及 `--install` 合并的 Xray 配置）会被记住，后台服务更新访问策略时会自动重新生成：
 
