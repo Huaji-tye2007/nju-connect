@@ -3,7 +3,7 @@
 基于 [zju-connect](https://github.com/Mythologyli/zju-connect) 的南京大学 aTrust VPN Linux 命令行工具
 
 - 一条命令安装，账号密码单独保存在权限为 600 的配置文件中
-- 后台服务自动判断是否在校园网：校外自动连接 VPN，回到校内自动断开；也可设为始终连接
+- 后台服务自动判断是否处在校内还是校外：校外自动连接 VPN，回到校内自动断开；也可设为始终连接
 - 可以根据学校下发的访问策略，导出 Clash/mihomo、sing-box、Xray/V2Ray 规则或 PAC 文件，并自动保持最新
 - 连接后在本机提供 SOCKS5 / HTTP 代理服务，南大资源走 VPN ，其余直连
 
@@ -93,17 +93,17 @@ nju-connect config set account.password       # 不写值时会提示输入（�
 
 **已经在用代理工具**时，用 `nju-connect export` 生成对应客户端的规则，只把南大流量交给 zju-connect。规则按学校下发的访问策略精确生成（域名、端口、TCP/UDP）。各客户端的支持情况如下，详细步骤见 [docs/proxy-clients.md](docs/proxy-clients.md)：
 
-| 客户端                           | 命令                                                                                  | 需要手动做的事                                                                  | 学校策略变化后               |
-| -------------------------------- | ------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------- | ---------------------------- |
-| Clash Verge Rev                  | `nju-connect export clash-verge --install`                                            | 无（按提示重启一次 Clash Verge）                                                | 自动                         |
-| FlClash                          | `nju-connect export clash-verge --inline -o ~/nju-flclash.js`                         | 在“工具 → 进阶设置 → 脚本”中导入该文件，并在配置的覆写中启用                    | 重新导入                     |
-| Clash Party 等其他 mihomo 客户端 | `nju-connect export clash-verge --inline -o …` 或 `clash-config --inline -o …`        | Clash Party：在“覆写”中导入脚本并打开全局启用；其他客户端：粘贴脚本或 YAML 片段 | 重新导入或粘贴               |
-| 原生 mihomo                      | `nju-connect export clash -o ~/.config/mihomo/ruleset/nju-vpn.yaml` 和 `clash-config` | 把片段合并进 `config.yaml`（一次）                                              | 自动                         |
-| sing-box                         | `nju-connect export sing-box -o …` 和 `sing-box-config`                               | 把出站和路由规则合并进配置（一次）                                              | 自动                         |
-| Xray                             | `nju-connect export xray --install -o ~/.config/xray/config.json`                     | 无（Xray 作为系统服务运行时需手动重启）                                         | 自动合并并重启 Xray 用户服务 |
-| v2rayN（Xray / sing-box 内核）   | `nju-connect export v2rayn -o ~/nju-v2rayn.json`                                      | 导入一次节点链接；在路由设置中导入规则文件；mihomo 内核不支持                   | 重新导入规则文件             |
-| v2rayA                           | `nju-connect export list`                                                             | **不直接支持**：按列表手写 RoutingA 规则                                        | 手动修改                     |
-| 浏览器 / 系统代理                | `nju-connect export pac -o ~/nju.pac`                                                 | 设置 PAC 地址 `file:///home/<用户名>/nju.pac`（一次）                           | 自动                         |
+| 客户端                           | 命令                                                                                  | 需要手动做的事                                                                  | 学校策略变化后是否需要手动操作 |
+| -------------------------------- | ------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------- | ------------------------------ |
+| Clash Verge Rev                  | `nju-connect export clash-verge --install`                                            | 无（按提示重启一次 Clash Verge）                                                | 不需要                         |
+| FlClash                          | `nju-connect export clash-verge --inline -o ~/nju-flclash.js`                         | 在“工具 → 进阶设置 → 脚本”中导入该文件，并在配置的覆写中启用                    | 重新导入                       |
+| Clash Party 等其他 mihomo 客户端 | `nju-connect export clash-verge --inline -o …` 或 `clash-config --inline -o …`        | Clash Party：在“覆写”中导入脚本并打开全局启用；其他客户端：粘贴脚本或 YAML 片段 | 重新导入或粘贴                 |
+| 原生 mihomo                      | `nju-connect export clash -o ~/.config/mihomo/ruleset/nju-vpn.yaml` 和 `clash-config` | 把片段合并进 `config.yaml`（一次）                                              | 不需要                         |
+| sing-box                         | `nju-connect export sing-box -o …` 和 `sing-box-config`                               | 把出站和路由规则合并进配置（一次）                                              | 不需要                         |
+| Xray                             | `nju-connect export xray --install -o ~/.config/xray/config.json`                     | 无（Xray 作为系统服务运行时需手动重启）                                         | 不需要合并并重启 Xray 用户服务 |
+| v2rayN（Xray / sing-box 内核）   | `nju-connect export v2rayn -o ~/nju-v2rayn.json`                                      | 导入一次节点链接；在路由设置中导入规则文件；mihomo 内核不支持                   | 重新导入规则文件               |
+| v2rayA                           | `nju-connect export list`                                                             | **不直接支持**：按列表手写 RoutingA 规则                                        | 手动修改                       |
+| 浏览器 / 系统代理                | `nju-connect export pac -o ~/nju.pac`                                                 | 设置 PAC 地址 `file:///home/<用户名>/nju.pac`（一次）                           | 不需要                         |
 
 各导出格式：
 
@@ -162,11 +162,11 @@ nju-connect export clash --refresh   # 先重新下载访问策略
 
 ## 常见问题
 
-- **每次都要短信验证码**：运行 `nju-connect trust` 把本机设为授信终端。学校限制每个账号最多 3 台电脑、3 台手机；超过时会失败（错误码 75500311），需要先在其他设备上取消授信。
-- **开启代理工具的 TUN 模式后服务误判为在校内**：TUN 会把内网 DNS 查询也转发进 VPN。请在 TUN 设置中排除 `nju-connect service status` 中“campus check”显示的地址（目前是 10.12.253.4、10.28.253.4），或改用系统代理。
-- **提示 zju-connect 版本过旧**：访问策略下载需要 `--fetch-resource` 选项，目前只有 [Huaji-tye2007/zju-connect](https://github.com/Huaji-tye2007/zju-connect) 的版本支持。运行 `nju-connect upgrade` 安装。
+- **非Linux平台可以用吗？**：本项目当前仅支持较新的 Linux 发行版，不保证在 WSL、macOS、BSD 等平台上能正常运行。其他平台暂不支持。
+- **每次登录都要短信验证码？**：运行 `nju-connect trust` 把本机设为授信终端。学校限制每个账号最多 3 台电脑、3 台手机；超过时会失败（错误码 75500311），需要先在其他设备上取消授信。
+- **开启代理工具的 TUN 模式后服务误判为在校内？**：TUN 会把内网 DNS 查询也转发进 VPN。请在 TUN 设置中排除 `nju-connect service status` 中“campus check”显示的地址（目前是 10.12.253.4、10.28.253.4），或改用系统代理。
+- **提示 zju-connect 版本过旧？**：访问策略下载需要 `--fetch-resource` 选项，目前只有 [Huaji-tye2007/zju-connect](https://github.com/Huaji-tye2007/zju-connect) 的版本支持。运行 `nju-connect upgrade` 安装。
 - **不想使用 systemd ?**：把 `nju-connect service run` 加入桌面自启动即可。
-- **`service start` 和 `service enable` 的区别**：`start` 只启动这一次，重新登录或重启后不会自动运行；`enable` 会在每次登录系统时自动启动（并立即启动）。`service status` 中显示 `starts automatically` 即表示已启用。服务随用户登录启动；如果希望开机后、登录前就运行，可执行 `loginctl enable-linger $USER`（此时登录前看不到桌面通知）。
 
 ## 参与开发
 
@@ -192,7 +192,7 @@ nju-connect export clash --refresh   # 先重新下载访问策略
 - 直接运行源码：`python3 -m nju_connect --help`
 - 打包：`tools/build.sh` 用标准库 `zipapp` 把整个包打成单个可执行文件 `dist/nju-connect`，Releases 中发布的就是它
 - 从源码安装：克隆本仓库后运行 `./install.sh`，会先打包再安装
-- 发布：修改 `nju_connect/__init__.py` 中的 `VERSION`，提交后推送 `v<VERSION>` 标签，GitHub Actions 会运行测试、打包并创建 Release
+- AI 工具：已经包含CLAUDE.md和AGENTS.md，提供了项目的介绍和要求。
 
 ## 致谢
 
@@ -206,7 +206,8 @@ nju-connect export clash --refresh   # 先重新下载访问策略
 ## 参与测试
 
 **极其欢迎提交issue和PR！！！**
-由于本项目当前仅为个人开发，在不同 Linux 发行版、不同桌面环境、不同代理工具下可能存在各种问题，欢迎大家提供使用反馈。目前本人使用的环境为 Ubuntu 24.04，代理工具为 Clash Verge Rev，其他环境可能存在兼容性问题。请在提交 issue 时提供以下信息：
+
+由于本项目当前仅为个人 ~~（纯vibe coding）~~ 开发，在不同 Linux 发行版、不同桌面环境、不同代理工具下可能存在各种问题，欢迎大家提供使用反馈。目前本人使用的环境为 Ubuntu 24.04，代理工具为 Clash Verge Rev，其他环境可能存在兼容性问题。请在提交 issue 时提供以下信息：
 
 - Linux 发行版及版本号
 - 桌面环境（GNOME、KDE、XFCE 等）
