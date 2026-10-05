@@ -20,12 +20,12 @@ zju-connect 自己会按学校的访问策略分流：南大资源走 VPN，其�
 
 | 客户端                                                            | 做法                                                  | 需要手动做的事                                                        | 学校策略变化后                       | 测试情况                             |
 | ----------------------------------------------------------------- | ----------------------------------------------------- | --------------------------------------------------------------------- | ------------------------------------ | ------------------------------------ |
-| [Clash Verge Rev](#clash-verge-rev)                               | `export clash-verge --install` 写入全局扩展脚本       | 无（按提示重启一次 Clash Verge）                                      | 自动（规则集文件每 10 分钟重新读取） | 已实测                               |
+| [Clash Verge Rev](#clash-verge-rev)                               | `export clash-verge --install` 写入全局扩展脚本       | 无（按提示重启一次 Clash Verge）                                      | 自动，立即生效                       | 已实测（新的文件结构待在界面中确认） |
 | [FlClash](#flclash)                                               | 导入 `--inline` 导出的覆写脚本                        | 导入                                                                  | 重新导入脚本                         | 内核已实测，界面步骤已实测           |
 | [Clash Party 等](#clash-party--mihomo-party-等其他-mihomo-客户端) | 导入覆写脚本（其他客户端：脚本或 YAML 片段）          | 导入脚本并全局启用                                                    | 重新导入                             | Clash Party 已实测；其他客户端未实测 |
-| [原生 mihomo](#原生-mihomo--自己维护的-configyaml)                | 规则集文件 + 合并一次配置片段                         | 合并一次配置                                                          | 自动                                 | 已实测                               |
-| [sing-box](#三sing-box-内核的客户端sing-box-111)                  | 规则集文件 + 合并一次出站和路由规则                   | 合并一次配置                                                          | 自动（sing-box 监视规则集文件）      | 已实测；图形客户端未实测             |
-| [Xray](#xray原生内核)                                             | `export xray --install` 自动合并进配置文件并重启 Xray | 无（Xray 由 systemd 系统服务运行时需手动重启）                        | 自动合并并重启用户服务               | 已实测（Xray 26.7）                  |
+| [原生 mihomo](#原生-mihomo--自己维护的-configyaml)                | `export clash-config --install` 写入规则和代理文件    | 把打印的片段合并进 `config.yaml`（一次）                              | 自动，立即生效（包括改端口）         | 已实测（mihomo 1.19）                |
+| [sing-box](#三sing-box-内核的客户端sing-box-111)                  | `export sing-box-config --install` 合并进配置并重载   | 无（sing-box 由 systemd 系统服务运行时需手动重载）                    | 自动，立即生效                       | 已实测（sing-box 1.14）；图形客户端未实测 |
+| [Xray](#xray原生内核)                                             | `export xray --install` 合并进配置并重启 Xray         | 无（Xray 由 systemd 系统服务运行时需手动重启）                        | 自动合并并重启用户服务               | 已实测（Xray 26.7）                  |
 | [v2rayN](#v2rayn)                                                 | 导入节点链接 + 从文件导入路由规则                     | 导入一次节点；导入规则文件（Xray / sing-box 内核；mihomo 内核不支持） | 重新导入规则文件                     | 已实测（Xray 内核，界面导入步骤）    |
 | [v2rayA](#v2raya不直接支持)                                       | 手写 RoutingA                                         | 全部手动                                                              | 手动修改                             | 不直接支持，未实测                   |
 | [浏览器 / 系统代理](#一不使用代理客户端)                          | PAC 文件                                              | 设置一次 PAC 地址                                                     | 自动（扩展中需重新粘贴）             | 已实测                               |
@@ -62,15 +62,23 @@ PAC 只把南大资源交给 `127.0.0.1:1081`，其余直连；zju-connect 停�
 
 导出的 Clash 配置包括：
 
-- 代理 `NJUConnect`：`socks5 127.0.0.1:1080`，支持 UDP
-- 策略组 `NJU`：`fallback` 类型，`[NJUConnect, DIRECT]`，每 5 分钟通过 NJUConnect 访问 `http://lib.nju.edu.cn/` 检测；VPN 不可用（例如在校内、服务停止）时自动改为直连
-- 规则集 `nju-vpn` 和放在最前面的几条规则（VPN 服务器和节点直连，然后 `RULE-SET,nju-vpn,NJU`）
+- 代理 `NJUConnect`：`socks5 127.0.0.1:1080`，支持 UDP，以及它的直连备用项 `NJUConnect-DIRECT`
+- 策略组 `NJU`：`fallback` 类型，先用 NJUConnect，每 5 分钟通过它访问 `http://lib.nju.edu.cn/` 检测；VPN 不可用（例如服务停止）时自动改为直连
+- 两个规则集：`nju-direct`（VPN 服务器和节点，必须直连）和 `nju-vpn`（南大资源），以及放在最前面的两条规则 `RULE-SET,nju-direct,DIRECT`、`RULE-SET,nju-vpn,NJU`
 
-名称、策略组类型和检测地址可以用 `nju-connect config set export.…` 修改。
+用 `--install` 安装时（Clash Verge Rev、原生 mihomo），代理和两个规则集都放在 nju-connect 维护的文件里：
+
+| 文件（相对 mihomo 的主目录） | 内容 |
+| --- | --- |
+| `ruleset/nju-vpn.yaml` | 南大资源 |
+| `ruleset/nju-direct.yaml` | VPN 服务器和节点 |
+| `proxies/nju-connect.yaml` | `NJUConnect`（含端口）和 `NJUConnect-DIRECT` |
+
+后台服务更新访问策略、或你修改 SOCKS 端口时只重写这些文件；mihomo 会监视它们的变化，**立即生效，不需要重启**。只有修改代理名称、策略组名称、类型或检测地址（`nju-connect config set export.…`）时，策略组和规则本身才会变化。
 
 ### Clash Verge Rev
 
-**已实测。** 全自动，不需要在界面中操作。
+**已实测。** 全自动，不需要在界面中操作。（这一版把规则和代理改放到上表的文件中，这个新结构还需要在 Clash Verge Rev 界面中再确认一次。）
 
 1. 运行：
 
@@ -78,14 +86,14 @@ PAC 只把南大资源交给 `127.0.0.1:1081`，其余直连；zju-connect 停�
    nju-connect export clash-verge --install
    ```
 
-   这会写入 Clash Verge Rev 的全局扩展脚本 `profiles/Script.js`（原脚本会自动备份），并把规则集写到 Clash Verge 目录下的 `ruleset/nju-vpn.yaml`。
+   这会写入 Clash Verge Rev 的全局扩展脚本 `profiles/Script.js`（原脚本会自动备份），并把上表的三个文件写到 Clash Verge 的数据目录下。
 
 2. Clash Verge Rev 只在重新生成配置时（启动时，或在界面中修改设置后）运行全局扩展脚本，不会因为脚本文件变化而自动生效。因此脚本有变化且 Clash Verge 正在运行时，命令会询问是否重启 Clash Verge（会以原来的命令行和桌面环境重新启动，代理内核在服务模式下继续运行）。不重启的话，也可以在 Clash Verge 中打开全局扩展脚本、随便修改一下再保存。
-3. 确认：“规则”页面中应能看到 `nju-vpn`，“代理”页面中有 `NJU` 策略组。
+3. 确认：“规则”页面中应能看到 `nju-direct` 和 `nju-vpn`，“代理”页面中有 `NJU` 策略组，成员依次是 `NJUConnect`、`NJUConnect-DIRECT`。
 
-**学校策略变化后**：后台服务只会更新规则集文件；规则集设置了 `interval: 600`，mihomo 每 10 分钟会自动重新读取，不需要重启 Clash Verge。
+**学校策略变化后**：后台服务只更新上表的文件，mihomo 立即重新读取，不需要重启 Clash Verge。只有修改 `export.*` 的名称或策略组设置时脚本才会变化，这时会弹出桌面通知提醒你重启 Clash Verge。
 
-**移除**：在 Clash Verge 中清空全局扩展脚本（或换回备份的 `Script.js.bak-…`），然后运行 `nju-connect export --forget clash-verge` 和 `nju-connect export --forget clash`。
+**移除**：在 Clash Verge 中清空全局扩展脚本（或换回备份的 `Script.js.bak-…`），然后运行 `nju-connect export --forget clash-verge`。
 
 ### FlClash
 
@@ -136,110 +144,94 @@ PAC 只把南大资源交给 `127.0.0.1:1081`，其余直连；zju-connect 停�
 
 ### 原生 mihomo / 自己维护的 config.yaml
 
-**已实测。** 规则集文件需要放在 mihomo 的主目录下（mihomo 只读取主目录内的规则集文件），这样可以自动更新：
+**已实测**（mihomo 1.19：按打印的提示合并后，`mihomo -t` 通过，策略组成员顺序正确，替换规则文件和代理文件后立即生效）。
 
-1. 导出规则集文件，并打印需要合并的片段（规则集为 `file` 类型）：
+nju-connect 不会修改你的 `config.yaml`（Python 标准库无法可靠地解析和改写 YAML，改坏了会让整个代理不可用），而是把会变化的内容都放进上表的文件里。所以只需要**手动合并一次**：
+
+1. 写入文件，并打印需要合并的内容：
 
    ```bash
-   nju-connect export clash -o ~/.config/mihomo/ruleset/nju-vpn.yaml
-   nju-connect export clash-config
+   nju-connect export clash-config --install
    ```
 
-2. 把片段中的 `proxies`、`proxy-groups`、`rule-providers` 加入你的 `config.yaml`，`rules` 中的几条放在你的规则**最前面**。合并后大致如下：
+   命令会从正在运行的 mihomo 进程（`-d` 参数）找到它的主目录，找不到时使用 `~/.config/mihomo`；也可以用 `-o 主目录`（或 `-o 主目录/config.yaml`）指定。主目录属于 root（例如系统服务的 `/etc/mihomo`）时 nju-connect 无法写入，请改用你自己目录下的配置运行 mihomo，或用 `-o` 指定一个可写的主目录。
+
+2. 按打印的四段提示，把内容合并进 `config.yaml`。打印的内容分为 ①②③④ 四段，每段注明放在哪个键下面；没有这个键时新建即可。合并后大致如下（具体参数可能因设置的不同而发生变化，具体以生成的参数为准）：
 
    ```yaml
-   proxies:
-     - {
-         name: NJUConnect,
-         type: socks5,
-         server: 127.0.0.1,
-         port: 1080,
-         udp: true,
-       }
+   proxy-providers:
+     nju-connect: { type: file, path: ./proxies/nju-connect.yaml, interval: 600 }
    proxy-groups:
      - {
          name: NJU,
          type: fallback,
-         proxies: [NJUConnect, DIRECT],
+         use: [nju-connect],
          url: "http://lib.nju.edu.cn/",
          interval: 300,
        }
    rule-providers:
+     nju-direct:
+       { type: file, behavior: classical, format: yaml, path: ./ruleset/nju-direct.yaml, interval: 600 }
      nju-vpn:
-       {
-         type: file,
-         behavior: classical,
-         format: yaml,
-         path: ./ruleset/nju-vpn.yaml,
-       }
+       { type: file, behavior: classical, format: yaml, path: ./ruleset/nju-vpn.yaml, interval: 600 }
    rules:
-     - DOMAIN,vpn.nju.edu.cn,DIRECT
-     - IP-CIDR,219.219.118.25/32,DIRECT,no-resolve # 以导出内容为准
+     - RULE-SET,nju-direct,DIRECT
      - RULE-SET,nju-vpn,NJU
      # …你原来的规则
    ```
 
-3. 重新加载 mihomo 配置。
+   策略组用 `use: [nju-connect]` 引用代理文件，不要再写 `proxies: [NJUConnect, DIRECT]`：mihomo 会把 `proxies` 排在 `use` 之前，`fallback` 就会先选到直连。
 
-**学校策略变化后**：规则集设置了 `interval: 600`，mihomo 每 10 分钟会重新读取文件，自动生效。
+3. 重新加载一次 mihomo（重启，或通过它的 API `PUT /configs`）。
+
+**之后**：学校策略变化、修改 SOCKS 端口都会自动生效，不需要再做任何事。修改 `export.*` 的名称或策略组设置后，后台服务会弹出通知；这时重新运行第 1 步，按提示更新 ② 和 ④ 两段。
+
+**从旧的做法迁移**（以前用 `export clash -o …` 加 `export clash-config` 合并过）：运行第 1 步，用新的四段替换以前合并的 `NJUConnect` 代理、`NJU` 策略组、`nju-vpn` 规则集和最前面的几条规则，再运行 `nju-connect export --forget clash`。
+
+**只想手动合并**：`nju-connect export clash-config`（不加 `--install`）仍然打印一份完整的片段，代理、VPN 节点直连规则都写在片段里，学校策略变化后需要重新合并。
 
 ## 三、sing-box 内核的客户端（sing-box 1.11+）
 
-**sing-box 内核已实测。**
+**已实测**（sing-box 1.14：合并、`sing-box check`、南大网站走 `NJUConnect`、VPN 服务器直连、收到 SIGHUP 后重新加载）。适用于自己维护配置文件的 sing-box。
 
-1. 导出两样东西：
+1. 合并并重载 sing-box：
 
    ```bash
-   nju-connect export sing-box -o ~/.config/sing-box/nju-vpn.json   # 规则集源文件，自动更新
-   nju-connect export sing-box-config                                # 打印需要合并的出站和路由规则
+   nju-connect export sing-box-config --install
    ```
 
-   `sing-box-config` 会引用上面记住的规则集文件（没有导出时把规则内联）。
+   命令会从正在运行的 sing-box 进程（`-c`、`-C`、`-D` 参数和工作目录）找到配置文件，找不到时查找 `~/.config/sing-box/config.json`、`/etc/sing-box/config.json`；也可以用 `-o 配置文件` 指定。它会：
+   - 第一次合并前备份原文件（`config.json.bak-时间`）；合并后的文件是标准 JSON，**原文件中的注释不会保留**
+   - 在配置文件旁的 `nju-connect/` 目录中写入三个 `local` 规则集：`nju-direct`（VPN 服务器和节点）、`nju-vpn`（南大资源）、`nju-resolve`（需要解析后再按 IP 匹配的南大域名）
+   - 在 `outbounds` **末尾**加入 `NJUConnect`，不影响你的默认出站；直连规则使用你已有的 `direct` 类型出站，没有时追加一个
+   - 在 `route.rules` **最前面**加入四条引用上述规则集的规则；再次合并时只替换引用这些规则集的规则，不会重复添加
+   - 能找到 `sing-box` 命令（`PATH` 中，或环境变量 `NJU_CONNECT_SING_BOX`）时，先用 `sing-box check` 检查，检查失败则不修改原文件
+   - 由 systemd **用户**服务运行时执行 `systemctl --user reload-or-restart`；手动运行的 sing-box 发送 SIGHUP 让它重新加载；系统服务提示你运行 `sudo systemctl reload-or-restart …`
 
-2. 合并进你的配置：
-   - `outbounds` 中加入它给出的 `socks` 出站（tag 为 `NJUConnect`）；你的配置需要有一个 tag 为 `direct` 的直连出站
-   - `route.rule_set` 中加入 `nju-vpn`
-   - 把 `route.rules` 中的几条放在你的路由规则**最前面**：先按域名匹配规则集；再对 `nju.edu.cn` 域名执行 `resolve`；然后按 IP 再匹配一次
-   - `route.default_domain_resolver` 需要指向一个可用的 DNS 服务器（`resolve` 动作要用到）
-
-   合并后大致如下：
+   合并后的规则大致如下：
 
    ```json
    {
-     "outbounds": [
-       { "type": "direct", "tag": "direct" },
-       {
-         "type": "socks",
-         "tag": "NJUConnect",
-         "server": "127.0.0.1",
-         "server_port": 1080,
-         "version": "5"
-       }
-     ],
-     "route": {
-       "default_domain_resolver": "你的 DNS 服务器 tag",
-       "rule_set": [
-         {
-           "type": "local",
-           "tag": "nju-vpn",
-           "format": "source",
-           "path": "/home/<用户名>/.config/sing-box/nju-vpn.json"
-         }
-       ],
-       "rules": [
-         { "domain": ["vpn.nju.edu.cn"], "outbound": "direct" },
-         { "ip_cidr": ["219.219.118.25/32"], "outbound": "direct" },
-         { "rule_set": "nju-vpn", "outbound": "NJUConnect" },
-         { "domain_suffix": ["nju.edu.cn"], "action": "resolve" },
-         { "rule_set": "nju-vpn", "outbound": "NJUConnect" }
-       ]
-     }
+     "rules": [
+       { "rule_set": "nju-direct", "outbound": "direct" },
+       { "rule_set": "nju-vpn", "outbound": "NJUConnect" },
+       { "rule_set": "nju-resolve", "action": "resolve" },
+       { "rule_set": "nju-vpn", "outbound": "NJUConnect" }
+     ]
    }
    ```
 
-3. 用 `sing-box check -c 配置文件` 检查后重启 sing-box。
+   `resolve` 需要 `route.default_domain_resolver` 指向一个可用的 DNS 服务器，没有设置时命令会给出提示。nju-connect 不会修改 `route.final` 和 `default_domain_resolver`。
 
-**学校策略变化后**：sing-box 会监视 `local` 规则集文件的变化，自动生效。
+2. 按上文“怎样确认生效”检查，命令行代理端口为你的 sing-box 入站端口。
+
+**学校策略变化后**：后台服务只更新 `nju-connect/` 中的规则集，sing-box 会监视它们的变化，立即生效，不需要重载。修改 SOCKS 端口或代理名称时，后台服务会重新合并配置并重载 sing-box。
+
+**配置文件属于 root**（例如发行版软件包的 `/etc/sing-box/config.json`）时 nju-connect 无法写入，做法同下文 Xray 一节：改用你自己目录下的配置和 systemd 用户服务运行 sing-box。
+
+**移除**：运行 `nju-connect export --forget sing-box-config`，再用备份文件恢复，或删除引用 `nju-*` 规则集的规则、这三个规则集和 `NJUConnect` 出站。
+
+**只想手动合并**：`nju-connect export sing-box -o 文件` 写出规则集，`nju-connect export sing-box-config`（不加 `--install`）打印需要合并的出站和路由规则（VPN 节点直连规则写在其中，学校策略变化后需要重新合并）。
 
 **图形客户端**（GUI.for.SingBox、NekoBox、Hiddify 等，未实测）：在其“自定义出站/路由规则/规则集”设置中按上面的方式添加；如果客户端只能把规则指向它自己的节点，可以先把 `socks5 127.0.0.1:1080` 添加为一个节点，再让南大规则指向该节点。
 
@@ -258,14 +250,14 @@ Xray 按“入站 → 路由 → 出站”处理每个连接：路由规则从�
 1. 合并规则并重启 Xray：
 
    ```bash
-   nju-connect export xray --install -o ~/.config/xray/config.json
+   nju-connect export xray --install
    ```
 
-   不加 `-o` 时依次查找 `~/.config/xray/config.json`、`/usr/local/etc/xray/config.json`、`/etc/xray/config.json`。这个命令会：
+   命令会从正在运行的 Xray 进程（`-c`、`-confdir` 参数和工作目录）找到配置文件，找不到时依次查找 `~/.config/xray/config.json`、`/usr/local/etc/xray/config.json`、`/etc/xray/config.json`；也可以用 `-o 配置文件` 指定。v2rayN 自带的 Xray 不会被选中（见下文 v2rayN 一节）。这个命令会：
    - 第一次合并前备份原文件（`config.json.bak-时间`）。注意：合并后的文件是标准 JSON，**原文件中的注释不会保留**，注释请到备份中找
    - 加入上面说的出站和规则（带 `"ruleTag": "nju-connect"`，再次合并时只替换这些规则，不会重复添加）；如果配置中没有 tag 为 `direct` 的出站，会追加一个 `freedom` 出站
    - 如果能找到 `xray` 命令（`PATH` 中，或环境变量 `NJU_CONNECT_XRAY`），先用 `xray run -test` 检查合并结果，检查失败则不修改原文件
-   - 如果 Xray 由 systemd **用户**服务（名称以 `xray` 开头）运行，询问是否重启它；如果是系统服务，提示你运行 `sudo systemctl restart xray`
+   - 如果 Xray 由 systemd **用户**服务运行，询问是否重启这个服务；如果是系统服务，提示你运行 `sudo systemctl restart …`
 
 2. 如果 Xray 是官方安装脚本装的系统服务，配置文件 `/usr/local/etc/xray/config.json` 属于 root，nju-connect 无法写入。可以改用用户服务运行 Xray：把配置复制到 `~/.config/xray/config.json`，`sudo systemctl disable --now xray`，再创建 `~/.config/systemd/user/xray.service`：
 

@@ -98,9 +98,9 @@ nju-connect config set account.password       # 不写值时会提示输入（�
 | Clash Verge Rev                  | `nju-connect export clash-verge --install`                                            | 无（按提示重启一次 Clash Verge）                                                | 不需要                         |
 | FlClash                          | `nju-connect export clash-verge --inline -o ~/nju-flclash.js`                         | 在“工具 → 进阶设置 → 脚本”中导入该文件，并在配置的覆写中启用                    | 重新导入                       |
 | Clash Party 等其他 mihomo 客户端 | `nju-connect export clash-verge --inline -o …` 或 `clash-config --inline -o …`        | Clash Party：在“覆写”中导入脚本并打开全局启用；其他客户端：粘贴脚本或 YAML 片段 | 重新导入或粘贴                 |
-| 原生 mihomo                      | `nju-connect export clash -o ~/.config/mihomo/ruleset/nju-vpn.yaml` 和 `clash-config` | 把片段合并进 `config.yaml`（一次）                                              | 不需要                         |
-| sing-box                         | `nju-connect export sing-box -o …` 和 `sing-box-config`                               | 把出站和路由规则合并进配置（一次）                                              | 不需要                         |
-| Xray                             | `nju-connect export xray --install -o ~/.config/xray/config.json`                     | 无（Xray 作为系统服务运行时需手动重启）                                         | 不需要合并并重启 Xray 用户服务 |
+| 原生 mihomo                      | `nju-connect export clash-config --install`                                           | 按打印的四段提示合并进 `config.yaml`（一次）                                    | 不需要（包括改端口）           |
+| sing-box                         | `nju-connect export sing-box-config --install`                                        | 无（sing-box 作为系统服务运行时需手动重载）                                     | 不需要                         |
+| Xray                             | `nju-connect export xray --install`                                                   | 无（Xray 作为系统服务运行时需手动重启）                                         | 不需要（自动合并并重启）       |
 | v2rayN（Xray / sing-box 内核）   | `nju-connect export v2rayn -o ~/nju-v2rayn.json`                                      | 导入一次节点链接；在路由设置中导入规则文件；mihomo 内核不支持                   | 重新导入规则文件               |
 | v2rayA                           | `nju-connect export list`                                                             | **不直接支持**：按列表手写 RoutingA 规则                                        | 手动修改                       |
 | 浏览器 / 系统代理                | `nju-connect export pac -o ~/nju.pac`                                                 | 设置 PAC 地址 `file:///home/<用户名>/nju.pac`（一次）                           | 不需要                         |
@@ -109,17 +109,17 @@ nju-connect config set account.password       # 不写值时会提示输入（�
 
 | 格式              | 内容                                                                                           |
 | ----------------- | ---------------------------------------------------------------------------------------------- |
-| `clash-verge`     | Clash Verge Rev 全局扩展脚本（注入代理、`fallback` 策略组和规则）；`--install` 直接安装        |
+| `clash-verge`     | Clash Verge Rev 全局扩展脚本（注入代理、`fallback` 策略组和规则）；`--install` 安装进 Clash Verge Rev，规则和代理放在它会监视的文件中 |
 | `clash`           | mihomo 规则集（rule-provider，classical）                                                      |
-| `clash-config`    | mihomo 配置片段：代理、策略组、规则集和规则                                                    |
+| `clash-config`    | mihomo 配置片段：代理、策略组、规则集和规则；`--install` 在 mihomo 主目录中写入规则和代理文件，并打印只需合并一次的内容 |
 | `sing-box`        | sing-box 规则集源文件（JSON）                                                                  |
-| `sing-box-config` | sing-box 出站和路由规则片段（引用上面的规则集；未导出时内联），需要 sing-box 1.11+             |
+| `sing-box-config` | sing-box 出站和路由规则片段（引用上面的规则集；未导出时内联），需要 sing-box 1.11+；`--install` 合并进 sing-box 配置文件（先备份、先检查、可重复执行）并重载 |
 | `xray`            | Xray 出站和路由规则（JSON）；`--install` 合并进 Xray 配置文件（先备份、可重复执行）并重启 Xray |
 | `v2rayn`          | v2rayN 可导入的路由规则列表：南大规则在前，后接当前启用规则集中原有的规则                      |
 | `pac`             | PAC 文件：南大资源走 `127.0.0.1:1081`，其余直连                                                |
 | `list`            | 纯文本列表（目标、端口、协议），可自行转换为其他格式                                           |
 
-使用 `-o` 写入的文件（以及 `--install` 合并的 Xray 配置）会被记住，后台服务更新访问策略时会自动重新生成：
+`--install` 会从正在运行的客户端进程找到它的配置（找不到时查找常见位置，也可以用 `-o` 指定）。使用 `-o` 写入的文件和 `--install` 安装的客户端都会被记住，后台服务更新访问策略时会自动重新生成：
 
 ```bash
 nju-connect export --list            # 查看已记住的导出文件
@@ -134,9 +134,9 @@ nju-connect export clash --refresh   # 先重新下载访问策略
 - Xray / v2rayN：在南大规则之后加一条 `domain:nju.edu.cn` 规则，把其余南大域名整体交给 zju-connect，由它通过 VPN 用校园网 DNS 解析，再按访问策略决定走 VPN 还是直连。这样代理客户端不需要自己解析域名（在校外只能用公网 DNS），也不用修改域名解析策略
 - PAC：只对南大域名调用 `dnsResolve`
 
-所有格式都会让 VPN 服务器和节点地址（如 `219.219.118.25`）直连，避免开启 TUN 模式时 zju-connect 自己的连接被转发回自身。
+所有格式都会让 VPN 服务器和节点地址（如 `219.219.118.25`）直连，避免开启 TUN 模式时 zju-connect 自己的连接被转发回自身。用 `--install` 安装时，这些直连规则也在自动更新的文件中，学校更换 VPN 节点后同样自动生效。
 
-**在校内**：`auto` 模式在校内会停止 zju-connect，此时 nju-connect 自己在同样的 SOCKS5/HTTP 端口上提供一个直连代理（`daemon.campus_proxy`），因此把南大流量交给 `127.0.0.1:1080` 的规则在校内也能正常使用。导出的 Clash 策略组还是 `fallback` 类型：VPN 在线时走 zju-connect，不可用时自动改为直连。mihomo 只能读取其主目录下的规则集文件，因此当 `clash` 导出文件不在 Clash Verge Rev 或 `~/.config/mihomo` 目录中时，`clash-verge` / `clash-config` 会把规则直接写进脚本或片段。
+**在校内**：`auto` 模式在校内会停止 zju-connect，此时 nju-connect 自己在同样的 SOCKS5/HTTP 端口上提供一个直连代理（`daemon.campus_proxy`），因此把南大流量交给 `127.0.0.1:1080` 的规则在校内也能正常使用。导出的 Clash 策略组还是 `fallback` 类型：VPN 在线时走 zju-connect，不可用时自动改为直连。mihomo 只能读取其主目录下的规则和代理文件，因此不加 `--install` 时，如果 `clash` 导出文件不在 Clash Verge Rev 或 `~/.config/mihomo` 目录中，`clash-verge` / `clash-config` 会把规则直接写进脚本或片段。
 
 ## 后台服务如何工作
 
@@ -185,7 +185,9 @@ nju-connect export clash --refresh   # 先重新下载访问策略
 | `policy.py`    | 把访问策略解析为与工具无关的条目                           |
 | `exporters.py` | 各种导出格式和已记住的导出文件                             |
 | `clash.py`     | Clash/mihomo 相关格式                                      |
-| `xray.py`      | Xray/v2rayN 相关格式，合并 Xray 配置并重启 Xray            |
+| `xray.py`      | Xray/v2rayN 相关格式，合并 Xray 配置                       |
+| `singbox.py`   | sing-box 规则集，合并 sing-box 配置                        |
+| `clients.py`   | 找到正在运行的代理内核及其配置文件，重载或重启它们         |
 | `direct.py`    | 在校内代替 zju-connect 提供的直连 SOCKS5/HTTP 代理         |
 
 - 测试：`python3 -m unittest discover -s tests -t .`
