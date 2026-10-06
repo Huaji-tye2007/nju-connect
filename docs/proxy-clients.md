@@ -25,21 +25,21 @@ zju-connect 自己会按学校的访问策略分流：南大资源走 VPN，其�
 
 ## 支持情况一览
 
-| 客户端                                                            | 做法                                                | 需要手动做的事                                                        | 学校策略变化后               | 测试情况                                  |
+| 客户端                                                            | 做法                                                | 需要手动做的事                                                        | 学校资源变化后               | 测试情况                                  |
 | ----------------------------------------------------------------- | --------------------------------------------------- | --------------------------------------------------------------------- | ---------------------------- | ----------------------------------------- |
-| [Clash Verge Rev](#clash-verge-rev)                               | `export clash-verge --install` 写入全局扩展脚本     | 无（按提示重启一次 Clash Verge）                                      | 自动，立即生效               | 已实测（新的文件结构待在界面中确认）      |
+| [Clash Verge Rev](#clash-verge-rev)                               | `export clash-verge --install` 写入全局扩展脚本     | 无（按提示重启一次 Clash Verge）                                      | 自动，立即生效               | 已实测                                    |
 | [FlClash](#flclash)                                               | 导入 `export mihomo-script` 导出的覆写脚本          | 导入                                                                  | 资源变化时重新导入（有通知） | 内核已实测，界面步骤已实测                |
 | [Clash Party 等](#clash-party--mihomo-party-等其他-mihomo-客户端) | 导入覆写脚本（其他客户端：脚本或 YAML 片段）        | 导入脚本并全局启用                                                    | 资源变化时重新导入（有通知） | Clash Party 已实测；其他客户端未实测      |
 | [原生 mihomo](#原生-mihomo--自己维护的-configyaml)                | `export clash-config --install` 写入规则和代理文件  | 把打印的片段合并进 `config.yaml`（一次）                              | 自动，立即生效（包括改端口） | 已实测（mihomo 1.19）                     |
 | [sing-box](#三sing-box-内核的客户端sing-box-111)                  | `export sing-box-config --install` 合并进配置并重载 | 无（sing-box 由 systemd 系统服务运行时需手动重载）                    | 自动，立即生效               | 已实测（sing-box 1.14）；图形客户端未实测 |
 | [Xray](#xray原生内核)                                             | `export xray --install` 合并进配置并重启 Xray       | 无（Xray 由 systemd 系统服务运行时需手动重启）                        | 自动合并并重启用户服务       | 已实测（Xray 26.7）                       |
 | [v2rayN](#v2rayn)                                                 | 导入节点链接 + 从文件导入路由规则                   | 导入一次节点；导入规则文件（Xray / sing-box 内核；mihomo 内核不支持） | 资源变化时重新导入（有通知） | 已实测（Xray 内核，界面导入步骤）         |
-| [v2rayA](#v2raya不直接支持)                                       | 手写 RoutingA                                       | 全部手动                                                              | 手动修改                     | 不直接支持，未实测                        |
+| [v2rayA](#v2raya不直接支持)                                       | 手写 RoutingA                                       | 全部手动                                                              | 手动修改                     | 不直接支持                                |
 | [浏览器 / 系统代理](#一不使用代理客户端)                          | PAC 文件                                            | 设置一次 PAC 地址                                                     | 自动（扩展中需重新粘贴）     | 已实测                                    |
 
 > 关于“已实测”：各格式的规则已在 mihomo、sing-box 1.14、Xray 26.3 / 26.7 内核上用真实的访问策略实测（南大网站走 NJU、其他网站不受影响、VPN 服务器和节点直连）。各图形客户端的菜单名称和位置随版本变化，标为“未实测”的界面步骤是按客户端源码整理的，请以实际界面为准；遇到问题欢迎提 issue。
 
-## 先了解：只以 IP 段出现的南大网站
+## 只以 IP 段出现的南大网站
 
 学校的访问策略中有不少网站只以 IP 段出现（例如 `xk.nju.edu.cn`、`ehall.nju.edu.cn` 属于 `219.219.112.0/20`）。zju-connect 收到域名后会自己解析（先查访问策略，再通过 VPN 查询校园网 DNS），然后按 IP 走 VPN；代理客户端如果只按域名规则匹配，这些网站会漏掉。导出的规则用两种办法处理 `nju.edu.cn` 下的域名（`export.resolve_domains` 设置），其他域名不受影响：
 
@@ -49,8 +49,6 @@ zju-connect 自己会按学校的访问策略分流：南大资源走 VPN，其�
 另外，导出的规则都会让 VPN 服务器（`vpn.nju.edu.cn`）和 VPN 节点地址直连。**这几条规则必须放在你的规则最前面**，否则开启 TUN 模式时，zju-connect 自己连接 VPN 的流量会被转发回它自己。
 
 **怎样确认生效**：在校外、VPN 已连接时，通过代理客户端访问只以 IP 段出现的 `http://xk.nju.edu.cn`（选课系统）和普通的 `https://www.baidu.com`。前者能打开、后者正常，就说明南大流量走了 VPN、其他流量没受影响。命令行可以用 `curl -I -x socks5h://127.0.0.1:<客户端端口> http://xk.nju.edu.cn`。
-
-## 一、不使用代理客户端
 
 先导出 PAC 文件：
 
@@ -71,7 +69,7 @@ PAC 只把南大资源交给 `127.0.0.1:1081`，其余直连；zju-connect 停�
 
 - 代理 `NJUConnect`：`socks5 127.0.0.1:1080`，支持 UDP，以及它的直连备用项 `NJUConnect-DIRECT`
 - 策略组 `NJU`：`fallback` 类型，先用 NJUConnect，每 5 分钟通过它访问 `http://lib.nju.edu.cn/` 检测；VPN 不可用（例如服务停止）时自动改为直连
-- 两个规则集：`nju-direct`（VPN 服务器和节点，必须直连）和 `nju-vpn`（南大资源），以及放在最前面的两条规则 `RULE-SET,nju-direct,DIRECT`、`RULE-SET,nju-vpn,NJU`
+- 两个规则集：`nju-direct`（VPN 服务器和节点）和 `nju-vpn`（南大资源），以及放在最前面的两条规则 `RULE-SET,nju-direct,DIRECT`、`RULE-SET,nju-vpn,NJU`
 
 所有 mihomo 客户端得到的结构都相同（名称、策略组和规则一致），区别只在代理和规则集放在哪里：不加 `--install`（FlClash、Clash Party 用的 `mihomo-script` 覆写脚本，以及打印的 `clash-config` 片段）时直接写在脚本或片段里（`type: inline`），南大资源变化时需要重新导入；用 `--install` 安装时（Clash Verge Rev、原生 mihomo）放在 nju-connect 维护的文件里：
 
@@ -85,7 +83,7 @@ PAC 只把南大资源交给 `127.0.0.1:1081`，其余直连；zju-connect 停�
 
 ### Clash Verge Rev
 
-**已实测。** 全自动，不需要在界面中操作。（这一版把规则和代理改放到上表的文件中，这个新结构还需要在 Clash Verge Rev 界面中再确认一次。）
+**已实测。** 全自动，不需要在界面中操作。
 
 1. 运行：
 
@@ -95,7 +93,7 @@ PAC 只把南大资源交给 `127.0.0.1:1081`，其余直连；zju-connect 停�
 
    这会写入 Clash Verge Rev 的全局扩展脚本 `profiles/Script.js`（原脚本会自动备份），并把上表的三个文件写到 Clash Verge 的数据目录下。
 
-2. Clash Verge Rev 只在重新生成配置时（启动时，或在界面中修改设置后）运行全局扩展脚本，不会因为脚本文件变化而自动生效。因此脚本有变化且 Clash Verge 正在运行时，命令会询问是否重启 Clash Verge（会以原来的命令行和桌面环境重新启动，代理内核在服务模式下继续运行）。不重启的话，也可以在 Clash Verge 中打开全局扩展脚本、随便修改一下再保存。
+2. Clash Verge Rev 只在重新生成配置时（启动时，或在界面中修改设置后）运行全局扩展脚本，不会因为脚本文件变化而自动生效。因此脚本有变化且 Clash Verge 正在运行时，命令会询问是否重启 Clash Verge（会以原来的命令行和桌面环境重新启动，代理内核在服务模式下继续运行）。
 3. 确认：“规则”页面中应能看到 `nju-direct` 和 `nju-vpn`，“代理”页面中有 `NJU` 策略组，成员依次是 `NJUConnect`、`NJUConnect-DIRECT`。
 
 **学校策略变化后**：后台服务只更新上表的文件，mihomo 立即重新读取，不需要重启 Clash Verge。只有修改 `export.*` 的名称或策略组设置时脚本才会变化，这时会弹出桌面通知提醒你重启 Clash Verge。
@@ -104,7 +102,7 @@ PAC 只把南大资源交给 `127.0.0.1:1081`，其余直连；zju-connect 停�
 
 ### FlClash
 
-**内核和 FlClash 界面步骤均已实测。**（这一版的脚本改为与 Clash Verge Rev 相同的结构，代理放在 `type: inline` 的 proxy-provider 中，已在 mihomo 1.19 内核上实测，还需要在 FlClash 中再确认一次。）FlClash 0.8.85 起支持 `main(config)` 覆写脚本。FlClash 读不到 nju-connect 维护的文件，所以用 `mihomo-script` 格式，把规则直接写进脚本：
+**内核和 FlClash 界面步骤均已实测。FlClash 0.8.85 起支持 `main(config)` 覆写脚本，但是FlClash 似乎读不到 nju-connect 维护的规则集等文件，所以用 `mihomo-script` 格式，把规则直接写进脚本：
 
 1. 导出脚本：
 
@@ -120,7 +118,7 @@ PAC 只把南大资源交给 `127.0.0.1:1081`，其余直连；zju-connect 停�
 
 ### Clash Party / Mihomo Party 等其他 mihomo 客户端
 
-**Clash Party 已实测；其他图形客户端均未实测。**（这一版的脚本结构有变化，同 FlClash，还需要在 Clash Party 中再确认一次。）
+**Clash Party 已实测；其他图形客户端均未实测。**
 
 **Clash Party**（JavaScript 覆写脚本）：
 
@@ -151,7 +149,7 @@ PAC 只把南大资源交给 `127.0.0.1:1081`，其余直连；zju-connect 停�
 
 ### 原生 mihomo / 自己维护的 config.yaml
 
-**已实测**（mihomo 1.19：按打印的提示合并后，`mihomo -t` 通过，策略组成员顺序正确，替换规则文件和代理文件后立即生效）。
+**已实测**。
 
 nju-connect 不会修改你的 `config.yaml`（Python 标准库无法可靠地解析和改写 YAML），而是把会变化的内容都放进上表的文件里。所以只需要**手动合并一次**：
 
@@ -212,7 +210,7 @@ nju-connect 不会修改你的 `config.yaml`（Python 标准库无法可靠地�
 
 ## 三、sing-box 内核的客户端（sing-box 1.11+）
 
-**已实测**（sing-box 1.14：合并、`sing-box check`、南大网站走 `NJUConnect`、VPN 服务器直连、收到 SIGHUP 后重新加载）。适用于自己维护配置文件的 sing-box。
+**已实测**（sing-box 1.14）。适用于自己维护配置文件的 sing-box。
 
 1. 合并并重载 sing-box：
 
@@ -247,9 +245,9 @@ nju-connect 不会修改你的 `config.yaml`（Python 标准库无法可靠地�
 
 **学校策略变化后**：后台服务只更新 `nju-connect/` 中的规则集，sing-box 会监视它们的变化，立即生效，不需要重载。修改 SOCKS 端口或代理名称时，后台服务会重新合并配置并重载 sing-box。
 
-**配置文件属于 root**（例如发行版软件包的 `/etc/sing-box/config.json`，以系统服务运行）时 nju-connect 无法写入，也不会使用 sudo。这时 `--install` 不修改配置文件，而是：
+**配置文件属于 root**（例如发行版软件包的 `/etc/sing-box/config.json`，以系统服务运行）时 nju-connect 无法写入。这时 `--install` 不修改配置文件，而是：
 
-1. 把三个规则集写到 `~/.local/share/nju-connect/sing-box/`（以 root 运行的 sing-box 能读取）；
+1. 把三个规则集写到 `~/.local/share/nju-connect/sing-box/`（此时以 root 运行的 sing-box 能读取）；
 2. 打印需要合并的三段内容：① 加到 `outbounds` 末尾的 `NJUConnect` 出站，② 加到 `route.rule_set` 的三个规则集，③ 放在 `route.rules` 最前面的四条规则。用 sudo 编辑配置文件，按提示合并一次，`sing-box check -c 配置文件` 检查后重载 sing-box。
 
 之后学校策略变化时，后台服务只更新这三个规则集，sing-box 自己重新读取，**同样不需要再做任何事**。修改 SOCKS 端口或代理名称后，后台服务会弹出通知，重新运行命令并更新 ① 和 ③ 即可。**已实测**（sing-box 1.14：按提示合并后 `sing-box check` 通过，南大网站走 `NJUConnect`）。
