@@ -47,11 +47,13 @@ NJU_CONNECT_NONINTERACTIVE=1 bash install.sh                      # install the 
 - The daemon does not start zju-connect without a saved session.
 - It watches zju-connect's output for SMS prompts (`zju.NEEDS_INPUT`). If it sees one, it notifies once and waits until the session file changes, because every retry sends a real SMS.
 - `service start/enable/restart` first ask the server whether the saved session is valid (`zju.check_session`, which uses the saved cookies only), and run `login` in the terminal if it isn't.
+- A rejected username or password (`zju.BAD_CREDENTIALS`) is never retried either: the server allows only a few attempts before locking the account. The daemon notifies once (with the attempts left) and waits until `config.toml` or the session changes (`Supervisor.credentials_pending`). Without any session it notifies once too.
+- A session belongs to an account and a server: options with the `LOGIN` effect (username, login domain, server address and port) move `client_data.json` aside (`configure.forget_session`) before the service restarts, and `setup` compares the old and new config.toml the same way (`configure.account_effects`). `PASSWORD` keeps the session (cookies do not depend on it) and only says when the new password is used.
 
 **Two configuration files** (`config.py`):
 - `config.toml` (mode 600) is read directly by zju-connect (`-config`). zju-connect rejects unknown keys, so it may only contain zju-connect options. `phone` is deliberately not written: NJU uses password logins, and an SMS step looks the number up from the server.
 - `nju-connect.conf` (INI, via `configparser`) holds nju-connect's own settings.
-- **Option registry:** `config.OPTIONS` presents both files as dotted keys for `config show|get|set` and `setup --advanced`. Each option declares its storage, kind and validation, and its effects: `RESTART` (restart the service if active) or `EXPORTS` (regenerate remembered exports).
+- **Option registry:** `config.OPTIONS` presents both files as dotted keys for `config show|get|set` and `setup --advanced`. Each option declares its storage, kind and validation, and its effects: `RESTART` (restart the service if active), `EXPORTS` (regenerate remembered exports), `LOGIN` (set the session aside: it is for another account or server) or `PASSWORD`.
 - **Adding a setting:** add a default in `SETTINGS_DEFAULTS`, an `Option`, and a row in the README settings table.
 - **Old setting formats** are converted in `config.migrate_settings`, which runs from `load_settings`. Old command names stay as hidden aliases in `cli.py` (`daemon`, `service install/uninstall`).
 

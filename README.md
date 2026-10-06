@@ -44,20 +44,22 @@ nju-connect service disable   # 取消自动启动（并停止）
 nju-connect service run       # 在当前终端运行（没有 systemd 的系统可把它加入自启动）
 ```
 
-终端只在 `nju-connect login` 时使用（输入短信验证码）；后台服务运行时，`login` 会自动暂停服务，登录完成后再恢复。`service start` / `enable` / `restart` 会先检查保存的登录状态（只用已保存的 Cookie 询问服务器，不会触发短信）；如果已经过期，会先在当前终端完成登录再启动服务，避免服务启动后因需要短信验证码而无法连接。
+`nju-connect login` 只用来获取**登录状态**：它在当前终端运行一次 zju-connect，需要时让你输入短信验证码，把登录状态（Cookie 和设备 ID，保存在 `~/.local/state/nju-connect/client_data.json`）保存下来后立即退出。之后后台服务用这份登录状态连接 VPN，不需要再输入验证码。因为同一时间只能运行一个 zju-connect，如果后台服务正在运行，`login` 会先暂停它，登录完成后再自动恢复。
+
+`service start` / `enable` / `restart` 会先检查保存的登录状态（只用已保存的 Cookie 询问服务器，不会触发短信）；如果没有或已经过期，会先在当前终端完成登录再启动服务。开机自动启动等其他情况下，服务会自己发现需要登录，并弹出通知（见下文“后台服务如何工作”）。
 
 ## 命令
 
-| 命令                                | 作用                                                                                              |
-| ----------------------------------- | ------------------------------------------------------------------------------------------------- |
-| `nju-connect setup [--advanced]`    | 首次配置：账号、端口、首次登录、后台服务；`--advanced` 还会询问连接模式、检查间隔和校园网检测设置 |
-| `nju-connect login`                 | 在终端中登录（需要时输入短信验证码）并保存登录状态                                                |
-| `nju-connect service ...`           | 控制后台服务，见上文                                                                              |
-| `nju-connect config show\|get\|set` | 查看或修改单项设置，见下文「配置」                                                                |
-| `nju-connect export ...`            | 为代理工具导出规则，见下文「与代理工具配合」                                                      |
-| `nju-connect trust` / `untrust`     | 把本机设为授信终端 / 取消授信（授信后登录免短信）                                                 |
-| `nju-connect upgrade`               | 升级到最新版本                                                                                    |
-| `nju-connect uninstall [--purge]`   | 先取消本机的授信（`--keep-trust` 跳过），再删除服务和程序；`--purge` 同时删除配置和登录状态       |
+| 命令                                | 作用                                                                                                                                      |
+| ----------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------- |
+| `nju-connect setup [--advanced]`    | 交互式修改配置信息。首次配置：账号、端口、首次登录、后台服务；`--advanced` 还会询问连接模式、检查间隔和校园网检测设置是否需要修改为其他值 |
+| `nju-connect login`                 | 在终端中登录（需要时输入短信验证码）并保存登录状态                                                                                        |
+| `nju-connect service ...`           | 控制后台服务，见上文                                                                                                                      |
+| `nju-connect config show\|get\|set` | 查看或修改单项设置，见下文「配置」                                                                                                        |
+| `nju-connect export ...`            | 为代理工具导出规则，见下文「与代理工具配合」                                                                                              |
+| `nju-connect trust` / `untrust`     | 把本机设为授信终端 / 取消授信（授信后登录无须重新短信验证，建议在login后执行以避免服务启动/重启时需要重新登录）                           |
+| `nju-connect upgrade`               | 升级到最新版本                                                                                                                            |
+| `nju-connect uninstall [--purge]`   | 先取消本机的授信（`--keep-trust` 跳过），再删除服务和程序；`--purge` 同时删除配置和登录状态                                               |
 
 ## 配置
 
@@ -70,7 +72,7 @@ nju-connect config set daemon.check_interval 30
 nju-connect config set account.password       # 不写值时会提示输入（密码不回显）
 ```
 
-修改后会自动生效：涉及连接或服务的设置会重启正在运行的服务，涉及导出的设置会重新生成已记住的导出文件。非法的值会被拒绝，文件保持不变。
+修改后会自动生效：涉及连接或服务的设置会重启正在运行的服务，涉及导出的设置会重新生成已记住的导出文件。非法的值会被拒绝，文件保持不变。修改用户名、登录域或服务器后（`config set` 或重新运行 `setup`），原来的登录状态属于旧账号，会被移到备份文件（`client_data.json.bak-时间`），需要运行 `nju-connect login` 重新登录（`setup` 会直接询问）；只修改密码时，原来的登录状态仍然有效，新密码在下次需要登录时使用。
 
 | 设置                                                             | 含义                                                                                   | 默认值                           |
 | ---------------------------------------------------------------- | -------------------------------------------------------------------------------------- | -------------------------------- |
@@ -93,32 +95,32 @@ nju-connect config set account.password       # 不写值时会提示输入（�
 
 **已经在用代理工具**时，用 `nju-connect export` 生成对应客户端的规则，只把南大流量交给 zju-connect。规则按学校下发的访问策略精确生成（域名、端口、TCP/UDP）。各客户端的支持情况如下，详细步骤见 [docs/proxy-clients.md](docs/proxy-clients.md)：
 
-| 客户端                           | 命令                                                                                  | 需要手动做的事                                                                  | 学校策略变化后是否需要手动操作 |
-| -------------------------------- | ------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------- | ------------------------------ |
-| Clash Verge Rev                  | `nju-connect export clash-verge --install`                                            | 无（按提示重启一次 Clash Verge）                                                | 不需要                         |
-| FlClash                          | `nju-connect export mihomo-script -o ~/nju-flclash.js`                                | 在“工具 → 进阶设置 → 脚本”中导入该文件，并在配置的覆写中启用                    | 资源变化时重新导入（有通知）   |
-| Clash Party 等其他 mihomo 客户端 | `nju-connect export mihomo-script -o …` 或 `clash-config -o …`                        | Clash Party：在“覆写”中导入脚本并打开全局启用；其他客户端：粘贴脚本或 YAML 片段 | 资源变化时重新导入或粘贴       |
-| 原生 mihomo                      | `nju-connect export clash-config --install`                                           | 按打印的四段提示合并进 `config.yaml`（一次）                                    | 不需要（包括改端口）           |
-| sing-box                         | `nju-connect export sing-box-config --install`                                        | 无（sing-box 作为系统服务运行时需手动重载）                                     | 不需要                         |
-| Xray                             | `nju-connect export xray --install`                                                   | 无（Xray 作为系统服务运行时需手动重启）                                         | 不需要（自动合并并重启）       |
-| v2rayN（Xray / sing-box 内核）   | `nju-connect export v2rayn -o ~/nju-v2rayn.json`                                      | 导入一次节点链接；在路由设置中导入规则文件；mihomo 内核不支持                   | 资源变化时重新导入（有通知）   |
-| v2rayA                           | `nju-connect export list`                                                             | **不直接支持**：按列表手写 RoutingA 规则                                        | 手动修改                       |
-| 浏览器 / 系统代理                | `nju-connect export pac -o ~/nju.pac`                                                 | 设置 PAC 地址 `file:///home/<用户名>/nju.pac`（一次）                           | 不需要                         |
+| 客户端                           | 命令                                                           | 需要手动做的事                                                                  | 学校策略变化后是否需要手动操作 |
+| -------------------------------- | -------------------------------------------------------------- | ------------------------------------------------------------------------------- | ------------------------------ |
+| Clash Verge Rev                  | `nju-connect export clash-verge --install`                     | 无（按提示重启一次 Clash Verge）                                                | 不需要                         |
+| FlClash                          | `nju-connect export mihomo-script -o ~/nju-flclash.js`         | 在“工具 → 进阶设置 → 脚本”中导入该文件，并在配置的覆写中启用                    | 资源变化时重新导入（有通知）   |
+| Clash Party 等其他 mihomo 客户端 | `nju-connect export mihomo-script -o …` 或 `clash-config -o …` | Clash Party：在“覆写”中导入脚本并打开全局启用；其他客户端：粘贴脚本或 YAML 片段 | 资源变化时重新导入或粘贴       |
+| 原生 mihomo                      | `nju-connect export clash-config --install`                    | 按打印的四段提示合并进 `config.yaml`（一次）                                    | 不需要（包括改端口）           |
+| sing-box                         | `nju-connect export sing-box-config --install`                 | 无（sing-box 作为系统服务运行时需手动重载）                                     | 不需要                         |
+| Xray                             | `nju-connect export xray --install`                            | 无（Xray 作为系统服务运行时需手动重启）                                         | 不需要（自动合并并重启）       |
+| v2rayN（Xray / sing-box 内核）   | `nju-connect export v2rayn -o ~/nju-v2rayn.json`               | 导入一次节点链接；在路由设置中导入规则文件；mihomo 内核不支持                   | 资源变化时重新导入（有通知）   |
+| v2rayA                           | `nju-connect export list`                                      | **不直接支持**：按列表手写 RoutingA 规则                                        | 手动修改                       |
+| 浏览器 / 系统代理                | `nju-connect export pac -o ~/nju.pac`                          | 设置 PAC 地址 `file:///home/<用户名>/nju.pac`（一次）                           | 不需要                         |
 
 各导出格式：
 
-| 格式              | 内容                                                                                           |
-| ----------------- | ---------------------------------------------------------------------------------------------- |
-| `clash-verge`     | Clash Verge Rev：`--install` 写入全局扩展脚本，规则和代理放在它会监视的文件中                  |
-| `mihomo-script`   | FlClash、Clash Party 等 mihomo 图形客户端的覆写脚本（内容全部内联，南大资源变化时重新导入）        |
-| `clash`           | mihomo 规则集（rule-provider，classical）                                                      |
-| `clash-config`    | mihomo 配置片段（内容全部内联）；`--install` 在 mihomo 主目录中写入规则和代理文件，并打印只需合并一次的内容 |
-| `sing-box`        | sing-box 规则集源文件（JSON）                                                                  |
+| 格式              | 内容                                                                                                                                                                         |
+| ----------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `clash-verge`     | Clash Verge Rev：`--install` 写入全局扩展脚本，规则和代理放在它会监视的文件中                                                                                                |
+| `mihomo-script`   | FlClash、Clash Party 等 mihomo 图形客户端的覆写脚本（内容全部内联，南大资源变化时重新导入）                                                                                  |
+| `clash`           | mihomo 规则集（rule-provider，classical）                                                                                                                                    |
+| `clash-config`    | mihomo 配置片段（内容全部内联）；`--install` 在 mihomo 主目录中写入规则和代理文件，并打印只需合并一次的内容                                                                  |
+| `sing-box`        | sing-box 规则集源文件（JSON）                                                                                                                                                |
 | `sing-box-config` | sing-box 出站和路由规则片段（内容全部内联），需要 sing-box 1.11+；`--install` 合并进 sing-box 配置文件（先备份、先检查、可重复执行）并重载，配置不可写时打印一次性的合并提示 |
-| `xray`            | Xray 出站和路由规则（JSON）；`--install` 合并进 Xray 配置文件（先备份、可重复执行）并重启 Xray |
-| `v2rayn`          | v2rayN 可导入的路由规则列表：南大规则在前，后接当前启用规则集中原有的规则                      |
-| `pac`             | PAC 文件：南大资源走 `127.0.0.1:1081`，其余直连                                                |
-| `list`            | 纯文本列表（目标、端口、协议），可自行转换为其他格式                                           |
+| `xray`            | Xray 出站和路由规则（JSON）；`--install` 合并进 Xray 配置文件（先备份、可重复执行）并重启 Xray                                                                               |
+| `v2rayn`          | v2rayN 可导入的路由规则列表：南大规则在前，后接当前启用规则集中原有的规则                                                                                                    |
+| `pac`             | PAC 文件：南大资源走 `127.0.0.1:1081`，其余直连                                                                                                                              |
+| `list`            | 纯文本列表（目标、端口、协议），可自行转换为其他格式                                                                                                                         |
 
 `--install` 会从正在运行的客户端进程找到它的配置（找不到时查找常见位置，也可以用 `-o` 指定），学校策略变化后自动生效；不加 `--install` 的导出内容全部内联，客户端需要重新导入：但只在学校增删南大资源或更换 VPN 网关时才需要（后台服务会通知），访问策略里只是解析出的 IP 有出入时不需要。使用 `-o` 写入的文件和 `--install` 安装的客户端都会被记住，后台服务更新访问策略时会自动重新生成；同一格式可以有多个导出：
 
@@ -148,7 +150,8 @@ nju-connect export pac -o ~/nju.pac --refresh  # 先重新下载访问策略
   - 内网 DNS 地址默认（`campus.dns_servers = auto`）从访问策略中自动获取：策略中授权给 VPN 用户、开放 UDP 53 端口的私有地址（目前是 10.12.253.4、10.28.253.4），以及服务器下发的 DNS 设置。学校更换地址后，服务每 30 分钟更新一次访问策略时会自动跟上；还没有下载过访问策略时使用内置的这两个地址。公网 DNS 在校外也会应答，因此不会被采用。`nju-connect service status` 会显示当前使用的地址及来源，也可以用 `nju-connect config set campus.dns_servers 地址,地址` 手动指定。
 - **VPN 是否可用**：通过 SOCKS5 代理向内网 DNS 查询，连续 3 次失败则重启 zju-connect。
 - **访问策略**：VPN 可用时每 30 分钟更新一次，并重新生成已记住的导出文件。
-- **需要登录**：还没有登录状态，或登录状态过期、服务器要求短信验证码时，服务不会反复重试（每次重试都会发送一条短信），而是弹出桌面通知并等待，直到 `nju-connect login` 保存新的登录状态。
+- **需要登录**：还没有登录状态，或登录状态过期、服务器要求短信验证码时，服务不会反复重试（每次重试都会发送一条短信），而是弹出桌面通知并等待，直到 `nju-connect login` 保存新的登录状态，之后自动重新连接。
+- **用户名或密码错误**：服务器拒绝登录时，服务立即停止重试（服务器只允许有限次数的尝试，用完后账号会被锁定），弹出桌面通知（包括剩余次数），等你用 `nju-connect config set account.password`（或 `account.username`）改正后再连接。
 - **其他连接失败**：逐渐延长重试间隔（最长 30 分钟）。
 
 ## 文件位置
