@@ -214,6 +214,8 @@ def save_settings(settings):
 
 RESTART = "restart"   # the service has to be restarted to pick the change up
 EXPORTS = "exports"   # remembered exports have to be regenerated
+LOGIN = "login"       # the saved session is for another account or server: log in again
+PASSWORD = "password" # the saved session stays valid; the password is used at the next login
 
 class Option:
     """One user-settable key, stored either in config.toml or nju-connect.conf."""
@@ -301,13 +303,13 @@ class Option:
 
 
 OPTIONS = [
-    Option("account.username", "NJU username (学号)", toml="username", effects=[RESTART]),
+    Option("account.username", "NJU username (学号)", toml="username", effects=[LOGIN, RESTART]),
     Option("account.password", "Password (统一身份认证密码)", toml="password", kind="password",
-           effects=[RESTART]),
-    Option("account.login_domain", "Login domain", toml="login_domain", effects=[RESTART]),
+           effects=[PASSWORD, RESTART]),
+    Option("account.login_domain", "Login domain", toml="login_domain", effects=[LOGIN, RESTART]),
     Option("server.address", "aTrust server", toml="server_address", kind="host",
-           effects=[RESTART, EXPORTS]),
-    Option("server.port", "aTrust server port", toml="server_port", kind="port", effects=[RESTART]),
+           effects=[LOGIN, RESTART, EXPORTS]),
+    Option("server.port", "aTrust server port", toml="server_port", kind="port", effects=[LOGIN, RESTART]),
     Option("proxy.socks_port", "SOCKS5 proxy port", toml="socks_bind", kind="bind",
            effects=[RESTART, EXPORTS]),
     Option("proxy.http_port", "HTTP proxy port", toml="http_bind", kind="bind",

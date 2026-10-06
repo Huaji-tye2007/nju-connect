@@ -3,19 +3,56 @@
 import getpass
 import os
 import shutil
+from datetime import datetime
 
 from . import paths, service
 from .config import (DEFAULT_DOMAIN, DEFAULT_HTTP_PORT, DEFAULT_SERVER, DEFAULT_SOCKS_PORT, EXPORTS,
-                     OPTIONS, RESTART, bind_port, load_config, load_settings, option, read_toml,
-                     save_settings, set_options, socks_address, write_config)
+                     LOGIN, OPTIONS, PASSWORD, RESTART, bind_port, load_config, load_settings, option,
+                     read_toml, save_settings, set_options, socks_address, write_config)
 from .exporters import refresh_exports
 from .network import port_in_use, require_no_instance
 from .util import ask, ask_yes, die
 from .zju import auth_domains, interactive_login
 
 
+# config.toml keys a saved session belongs to: changing one means logging in again
+SESSION_KEYS = ("username", "login_domain", "server_address", "server_port")
+
+
+def account_effects(old, new):
+    """LOGIN if the session in client_data.json is for another account or server now,
+    PASSWORD if only the password changed (the session stays valid)."""
+    if any(str(old.get(key, "")) != str(new.get(key, "")) for key in SESSION_KEYS):
+        return {LOGIN}
+    return {PASSWORD} if old.get("password") != new.get("password") else set()
+
+
+def forget_session():
+    """Move the saved session aside (not deleted, so it can be restored); returns where to."""
+    if not paths.CLIENT_DATA.exists():
+        return None
+    backup = paths.CLIENT_DATA.with_name(f"{paths.CLIENT_DATA.name}.bak-{datetime.now():%Y%m%d-%H%M%S}")
+    os.replace(paths.CLIENT_DATA, backup)
+    return backup
+
+
+def apply_session_effects(effects):
+    """Handle LOGIN/PASSWORD; returns the other effects."""
+    if LOGIN in effects:
+        backup = forget_session()
+        if backup:
+            print(f"The account or server changed, so the saved session (for the old one) was moved to "
+                  f"{backup};\nrun `nju-connect login` to log in.")
+    elif PASSWORD in effects and paths.CLIENT_DATA.exists():
+        print("The new password is used the next time a login is needed; the saved session stays valid.\n"
+              "Run `nju-connect login` to check it now.")
+    return set(effects) - {LOGIN, PASSWORD}
+
+
 def apply_effects(effects):
-    """Regenerate remembered exports and/or restart the service after a change."""
+    """Set an outdated session aside, regenerate remembered exports and/or restart the service
+    after a change (the session first, so a restarted service waits for the new login)."""
+    effects = apply_session_effects(effects)
     if not effects:
         return
     if EXPORTS in effects and paths.RESOURCE.exists():
@@ -134,7 +171,9 @@ def login():
     if ok:
         print(f"\nLogged in; the session is saved in {paths.CLIENT_DATA}")
     else:
-        print("\nLogin did not complete; run `nju-connect login` to try again")
+        print("\nLogin did not complete; run `nju-connect login` to try again. If zju-connect said the\n"
+              "username or password is incorrect, fix it first with `nju-connect config set account.password`\n"
+              "(or account.username).")
     return ok
 
 
@@ -143,10 +182,12 @@ def setup(server=None, advanced=False):
     existing = read_toml(paths.CONFIG_TOML) if paths.CONFIG_TOML.exists() else {}
     effects = set()
     if not existing or ask_yes(f"{paths.CONFIG_TOML} exists. Reconfigure username/password/ports?"):
-        write_config(ask_basic(existing, server))
+        config = ask_basic(existing, server)
+        write_config(config)
         print(f"Wrote {paths.CONFIG_TOML} (mode 600)")
         if existing:
-            effects |= {RESTART, EXPORTS}
+            # now, so that the login below is asked for when the session was for the old account
+            effects |= apply_session_effects(account_effects(existing, config) | {RESTART, EXPORTS})
 
     paths.STATE_DIR.mkdir(parents=True, exist_ok=True)
     os.chmod(paths.STATE_DIR, 0o700)
