@@ -15,7 +15,14 @@ from .network import instance_problems, on_campus, port_in_use, vpn_healthy
 from .exporters import refresh_exports
 from .policy import update_policy
 from .util import log, notify
-from .zju import NEEDS_INPUT, require_fetch_resource, session_mtime
+from .zju import ATTEMPTS_LEFT, BAD_CREDENTIALS, NEEDS_INPUT, require_fetch_resource, session_mtime
+
+
+def _mtime(path):
+    try:
+        return path.stat().st_mtime
+    except OSError:
+        return None
 
 
 class Supervisor:
@@ -42,6 +49,8 @@ class Supervisor:
         self.needs_input = False
         self.login_mark = None      # session mtime when a manual login became necessary
         self.waiting_for_login = False
+        self.bad_credentials = None   # attempts-left text once the server rejected the password
+        self.credentials_mark = None  # (config.toml, session) mtimes when that happened
         # on campus the proxy ports connect directly, so rules pointing at zju-connect still work
         self.direct = DirectProxy(config) if settings["daemon"]["campus_proxy"] == "direct" else None
         self.direct_failed = False
@@ -67,6 +76,7 @@ class Supervisor:
     def start(self):
         log("Off campus: starting zju-connect")
         self.needs_input = False
+        self.bad_credentials = None
         self.proc = subprocess.Popen([paths.zju_connect_binary(), "-config", str(paths.CONFIG_TOML)],
                                      stdin=subprocess.DEVNULL, stdout=subprocess.PIPE,
                                      stderr=subprocess.STDOUT, start_new_session=True)
@@ -84,6 +94,9 @@ class Supervisor:
                 sys.stdout.flush()
                 if NEEDS_INPUT.search(line):
                     self.needs_input = True
+                if BAD_CREDENTIALS.search(line):
+                    left = ATTEMPTS_LEFT.search(line)
+                    self.bad_credentials = f"{left.group(1)} attempts left" if left else "attempts are limited"
 
     def require_login(self, why):
         """Stop retrying (each try may send an SMS) until the user logs in again."""
@@ -99,7 +112,8 @@ class Supervisor:
         if session_mtime() is None:
             if not self.waiting_for_login:
                 self.waiting_for_login = True
-                log("No saved session yet; waiting for `nju-connect login`")
+                notify("No saved VPN session: run `nju-connect login` in a terminal; "
+                       "the service connects by itself afterwards.")
             return True
         if session_mtime() != self.login_mark:
             log("New session found; connecting again")
@@ -131,6 +145,13 @@ class Supervisor:
         if self.needs_input:
             self.require_login("The VPN session expired and the login needs an SMS code.")
             return
+        if self.bad_credentials:
+            # never try again with the same password: each try uses up an attempt
+            self.credentials_mark = self._credentials_files()
+            notify(f"The NJU username or password is wrong ({self.bad_credentials} before the account "
+                   "is locked). Fix it with `nju-connect config set account.password`; the service tries "
+                   "again once the setting changes.")
+            return
         if ran >= self.QUICK_EXIT:
             self.failures = 0
             return
@@ -141,6 +162,21 @@ class Supervisor:
         if self.failures >= 2 and not self.notified:
             self.notified = True
             notify("zju-connect keeps failing to connect; see `nju-connect service logs`.")
+
+    @staticmethod
+    def _credentials_files():
+        return _mtime(paths.CONFIG_TOML), session_mtime()
+
+    def credentials_pending(self):
+        """True while the password the server rejected is unchanged (config.toml and session)."""
+        if self.credentials_mark is None:
+            return False
+        if self._credentials_files() == self.credentials_mark:
+            return True
+        log("The account settings or the session changed; connecting again")
+        self.credentials_mark = None
+        self.failures, self.retry_at = 0, 0.0
+        return False
 
     def refresh_policy(self, now):
         if now < self.next_update:
@@ -187,7 +223,7 @@ class Supervisor:
                     self.refresh_policy(now)
                 return
             self.warned_external = False
-            if self.login_pending():
+            if self.login_pending() or self.credentials_pending():
                 return
             if now >= self.retry_at:
                 self.start()

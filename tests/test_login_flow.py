@@ -15,6 +15,13 @@ echo "Login error: complete secondary SMS challenge: EOF"
 exit 1
 """
 
+BAD_PASSWORD = """#!/bin/sh
+echo "Starting login with auth type: auth/psw, login domain: openldap13924"
+echo "Login error: password authentication failed with code 75500000: The username or password is \
+incorrect. You still have 9 attempts left"
+exit 1
+"""
+
 LOGIN_OK = """#!/bin/sh
 sleep 1
 printf '{"cookies": []}' > "$NJU_TEST_CLIENT_DATA"
@@ -53,7 +60,8 @@ class LoginFlowTest(unittest.TestCase):
                    mock.patch.object(daemon, "vpn_healthy", return_value=False),
                    mock.patch.object(daemon, "update_policy", return_value=([], {})),
                    mock.patch.object(daemon, "refresh_exports", return_value=0),
-                   mock.patch.object(daemon.paths, "zju_connect_binary", return_value=binary)]
+                   mock.patch.object(daemon.paths, "zju_connect_binary", return_value=binary),
+                   mock.patch.object(daemon, "notify")]   # never a real desktop notification
         for p in patches:
             p.start()
             self.addCleanup(p.stop)
@@ -63,6 +71,28 @@ class LoginFlowTest(unittest.TestCase):
         s = self.supervisor(fake_zju(SMS_FAILURE))
         s.tick()
         self.assertIsNone(s.proc)
+        s.tick()
+        daemon.notify.assert_called_once()   # told once to run `nju-connect login`
+        self.assertIn("nju-connect login", daemon.notify.call_args.args[0])
+
+    def test_wrong_password_is_not_tried_again(self):
+        paths.CLIENT_DATA.write_text("{}")
+        s = self.supervisor(fake_zju(BAD_PASSWORD))
+        s.tick()                          # starts zju-connect, which is refused
+        s.proc.wait(timeout=10)
+        time.sleep(0.2)                   # let the output pump catch up
+        s.tick()                          # reaps it
+        self.assertIsNone(s.proc)
+        daemon.notify.assert_called_once()
+        self.assertIn("9 attempts left", daemon.notify.call_args.args[0])
+        s.retry_at = 0
+        for _ in range(3):                # no backoff retries with the same password
+            s.tick()
+            self.assertIsNone(s.proc)
+        os.utime(paths.CONFIG_TOML, (time.time() + 5, time.time() + 5))   # `config set account.password`
+        s.tick()
+        self.assertIsNotNone(s.proc)
+        s.stop("test")
 
     def test_sms_prompt_stops_retries_until_a_new_login(self):
         paths.CLIENT_DATA.write_text("{}")

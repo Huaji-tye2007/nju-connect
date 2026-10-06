@@ -12,6 +12,10 @@ from . import paths
 
 # zju-connect output meaning the login is waiting for input (an SMS code)
 NEEDS_INPUT = re.compile(r"Please enter|challenge: EOF|verification code", re.I)
+# the server rejected the username or password; every further try uses up one of the few
+# attempts before the account is locked
+BAD_CREDENTIALS = re.compile(r"password authentication failed|username or password is incorrect", re.I)
+ATTEMPTS_LEFT = re.compile(r"(\d+) attempts? left", re.I)
 
 _fetch_resource_checked = False
 
