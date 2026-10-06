@@ -214,7 +214,7 @@ nju-connect export pac -o ~/nju.pac --refresh  # 先重新下载访问策略
 
 **极其欢迎提交issue和PR！！！**
 
-由于本项目当前仅为个人 ~~（纯vibe coding）~~ 开发，在不同 Linux 发行版、不同桌面环境、不同代理工具下可能存在各种问题，欢迎大家提供使用反馈。目前本人使用的环境为 Ubuntu 24.04，代理工具为 Clash Verge Rev，其他环境可能存在兼容性问题。请在提交 issue 时提供以下信息：
+由于本项目当前仅为个人 ~~（纯vibe coding）~~ 开发，在不同 Linux 发行版、不同桌面环境、不同代理工具下可能存在各种问题，欢迎大家提供使用反馈。请在提交 issue 时提供以下信息：
 
 - Linux 发行版及版本号
 - 桌面环境（GNOME、KDE、XFCE 等）
